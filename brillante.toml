@@ -1,0 +1,5 @@
+courses = ["content/getting-started", "content/crlb", "/mnt/storage/code/optics-course"]
+
+[server]
+host = "127.0.0.1"
+port = 3000

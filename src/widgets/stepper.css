@@ -1,0 +1,75 @@
+.stepper {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  padding: 18px 22px;
+  margin: 24px 0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.stepper-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.stepper-label[hidden], .stepper-step .step-title[hidden],
+.stepper-step .step-tex[hidden], .stepper-step .step-text[hidden],
+.stepper-step .step-note[hidden] {
+  display: none;
+}
+.stepper-step {
+  min-height: 80px;
+  padding: 6px 0 10px;
+}
+.step-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.step-tex {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px;
+  font-size: 1.05rem;
+}
+.step-text {
+  color: #334155;
+  line-height: 1.5;
+}
+.step-note {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+}
+.stepper-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.stepper-btn {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.stepper-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.stepper-counter {
+  flex: 1;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

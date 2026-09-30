@@ -1,0 +1,49 @@
+.flashcard {
+  perspective: 1000px;
+  margin: 24px 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.flashcard-inner {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.4, 0.1, 0.2, 1);
+}
+.flashcard.flipped .flashcard-inner {
+  transform: rotateY(180deg);
+}
+.flashcard-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  font-size: 1.08rem;
+  text-align: center;
+}
+.flashcard-front {
+  position: relative;
+  min-height: 160px;
+  background: color-mix(in srgb, var(--accent) 8%, #fff);
+  font-weight: 600;
+}
+.flashcard-front::after {
+  content: 'click to flip';
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: #94a3b8;
+  letter-spacing: 0.03em;
+}
+.flashcard-back {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  transform: rotateY(180deg);
+}

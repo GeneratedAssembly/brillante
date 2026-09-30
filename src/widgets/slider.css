@@ -1,0 +1,28 @@
+.slider {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  padding: 18px 22px;
+  margin: 24px 0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.slider-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.slider-label {
+  font-weight: 600;
+}
+.slider-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+.slider-input {
+  width: 100%;
+  accent-color: var(--accent);
+}

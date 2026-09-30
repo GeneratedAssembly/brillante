@@ -1,0 +1,58 @@
+.plot {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  padding: 18px 22px;
+  margin: 24px 0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.plot-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.plot-title[hidden], .plot-xlabel[hidden], .plot-ylabel[hidden] {
+  display: none;
+}
+.plot-body {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.plot-canvas {
+  width: 100%;
+  flex: 1;
+  height: 300px;
+}
+.plot-ylabel {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  font-size: 0.8rem;
+  color: #64748b;
+  align-self: center;
+}
+.plot-xlabel {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 4px;
+}
+.plot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: #475569;
+}
+.plot-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.plot-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  display: inline-block;
+}

@@ -1,0 +1,102 @@
+.quiz {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  padding: 20px 22px;
+  margin: 24px 0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.quiz-question {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 14px;
+}
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.quiz-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.05s;
+}
+.quiz-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, #fff);
+}
+.quiz-option:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.quiz-option-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, #fff);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.quiz-option.correct {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+.quiz-option.correct .quiz-option-letter {
+  background: #10b981;
+  color: #fff;
+}
+.quiz-option.incorrect {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  opacity: 0.75;
+  animation: quiz-shake 0.25s;
+}
+.quiz-option.incorrect .quiz-option-letter {
+  background: #ef4444;
+  color: #fff;
+}
+.quiz-option.reveal {
+  border-color: #10b981;
+  border-style: dashed;
+}
+.quiz-option:disabled {
+  cursor: default;
+}
+@keyframes quiz-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+.quiz-explanation {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, #fff);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, #fff);
+  font-size: 0.95rem;
+}
+.quiz-explanation[hidden] {
+  display: none;
+}
+.quiz-explanation-label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin-bottom: 4px;
+}

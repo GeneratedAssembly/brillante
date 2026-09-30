@@ -1,0 +1,82 @@
+.math {
+  margin: 26px 0;
+}
+.math-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 2px;
+  font-size: 1.08rem;
+}
+.math-display.katex-display {
+  margin: 0;
+}
+.math-display.math-fallback {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 4%, #ffffff);
+  border-radius: 10px;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+}
+.math-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.math-label[hidden] {
+  display: none;
+}
+.math-defs {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 3%, #ffffff);
+  font-size: 0.88rem;
+}
+.math-defs summary {
+  cursor: pointer;
+  padding: 7px 14px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  user-select: none;
+}
+.math-defs summary:hover {
+  color: var(--accent);
+}
+.math-defs[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+.math-defs-body {
+  padding: 8px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.math-def-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.math-def-symbol {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 3.5em;
+  flex-shrink: 0;
+}
+.math-def-meaning {
+  color: #334155;
+}
+.math-def-link {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.math-def-link:hover {
+  text-decoration: underline;
+}

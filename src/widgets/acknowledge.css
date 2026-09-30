@@ -1,0 +1,52 @@
+.acknowledge {
+  margin: 24px 0;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface, #fff));
+}
+
+.ack-inner {
+  padding: 18px 20px;
+}
+
+.ack-statement {
+  margin: 0 0 12px;
+  font-size: 1.02rem;
+}
+
+.ack-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ack-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.ack-check-label {
+  font-size: 0.92rem;
+  color: var(--muted, #64748b);
+}
+
+.ack-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.ack-done {
+  margin: 10px 0 0;
+  font-weight: 600;
+  color: #10b981;
+}
+
+.acknowledge.acked .ack-row {
+  opacity: 0.6;
+}
