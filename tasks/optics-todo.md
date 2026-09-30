@@ -151,6 +151,17 @@ from Tasks 11–16 (15-telescopes, 17-chromatic-spherical-coma, 20-rays-to-waves
 `16-radiometry.md`
 **Dependencies:** Task 10
 
+**Status: done.** All four lessons + 47 config entries written and verified (reload →
+5 expected empty-section warnings only → 0 error cards on all 16 lessons; all 17
+definitions-panel anchors resolve, including cross-lesson links into lessons 10 and
+12; dead links only to future lesson 37). Note: the plan's "Radiometry & photometry
+(lec 6 notes)" mapping was stale — the MIT mirror has no radiometry notes; lesson 16
+was written from the standard SI framework (radiometric quantities, E = πL/4N²,
+CIE photometry) anchored to the course's own stops/NA/exposure story, with the MIT
+lec 6 video cited as in-course grounding. OpenStax citations follow the LibreTexts
+PDF numbering (§2.8 Simple Magnifier, §2.9 Microscopes and Telescopes), consistent
+with lessons 05–12.
+
 ## Task 12: Section 6 — Aberrations & Optical Design (3 lessons)
 **Files:** `17-chromatic-spherical-coma.md`, `18-astig-field-distortion.md`, `19-grin-design.md`
 **Dependencies:** Task 11
