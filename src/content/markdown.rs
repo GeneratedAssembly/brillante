@@ -80,6 +80,16 @@ fn paragraph(inline: Vec<AnyView>) -> AnyView {
     view! { <p>{inline}</p> }.into_any()
 }
 
+/// Tags pulldown-cmark emits as inline containers. They can appear without a
+/// wrapping `Paragraph` event inside tight list items, where they must not be
+/// treated as block boundaries.
+fn inline_tag(tag: &Tag) -> bool {
+    matches!(
+        tag,
+        Tag::Emphasis | Tag::Strong | Tag::Strikethrough | Tag::Link { .. } | Tag::Image { .. }
+    )
+}
+
 fn into_views(nodes: Vec<Node>) -> Vec<AnyView> {
     nodes
         .into_iter()
@@ -417,11 +427,21 @@ impl<'a> MdParser<'a> {
             let ev = self.events.next().unwrap();
             match ev {
                 Event::Start(tag) => {
-                    if !pending.is_empty() {
-                        out.push(paragraph(std::mem::take(&mut pending)));
-                    }
-                    for v in self.start_tag(tag) {
-                        out.push(v);
+                    if inline_tag(&tag) {
+                        // Tight list items (and similar containers) emit
+                        // inline runs with no wrapping Paragraph event; if
+                        // they were dispatched to start_tag, each would be
+                        // split into its own <p>. Keep them in one paragraph.
+                        for v in self.start_tag(tag) {
+                            pending.push(v);
+                        }
+                    } else {
+                        if !pending.is_empty() {
+                            out.push(paragraph(std::mem::take(&mut pending)));
+                        }
+                        for v in self.start_tag(tag) {
+                            out.push(v);
+                        }
                     }
                 }
                 Event::Text(t) => pending.push(t.to_string().into_any()),
@@ -822,7 +842,91 @@ fn table_cell(tag: &str, align: Option<&Alignment>, nodes: Vec<AnyView>) -> AnyV
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::course::load_course_dir;
     use crate::diag::Severity;
+
+    fn fixture_course() -> (tempfile::TempDir, Course, std::collections::HashMap<String, String>) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("01-a.md"), "---\ntitle: A\n---\nbody").unwrap();
+        std::fs::write(dir.path().join("02-b.md"), "---\ntitle: B\n---\nnext").unwrap();
+        let mut diags = Vec::new();
+        let course = load_course_dir(dir.path(), &mut diags).unwrap();
+        let by_file = course
+            .lessons
+            .iter()
+            .map(|l| (l.file_name.clone(), l.slug.clone()))
+            .collect();
+        (dir, course, by_file)
+    }
+
+    fn render_doc(src: &str, course: &Course, by_file: &std::collections::HashMap<String, String>) -> String {
+        let registry = WidgetRegistry::with_builtins();
+        let ctx = MarkdownCtx {
+            course,
+            source: Path::new("01-a.md"),
+            lessons_by_file: by_file,
+        };
+        let mut diags = Vec::new();
+        render_markdown(src, &ctx, &registry, &mut diags)
+            .views
+            .into_iter()
+            .map(|v| crate::render::render_html(move || v))
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    #[test]
+    fn tight_list_items_render_one_paragraph_per_item() {
+        let (_dir, course, by_file) = fixture_course();
+        let html = render_doc(
+            "- **Bold lead.** rest of item\n- second [link](02-b.md) item\n",
+            &course,
+            &by_file,
+        );
+        assert!(
+            html.contains("<li><p><strong>Bold lead.</strong> rest of item</p></li>"),
+            "bold lead must stay inside the item's paragraph: {html}"
+        );
+        let link_html = format!(
+            "<li><p>second <a href=\"/course/{}/b\">link</a> item</p></li>",
+            course.slug
+        );
+        assert!(
+            html.contains(&link_html),
+            "links must stay inside the item's paragraph: {html}"
+        );
+        assert!(!html.contains("</strong><p>"), "{html}");
+        assert!(!html.contains("</p><a"), "{html}");
+    }
+
+    #[test]
+    fn numbered_tight_list_items_render_one_paragraph_per_item() {
+        let (_dir, course, by_file) = fixture_course();
+        let html = render_doc(
+            "1. **First rule.** text one\n2. **Second rule.** text two\n",
+            &course,
+            &by_file,
+        );
+        assert!(
+            html.contains("<li><p><strong>First rule.</strong> text one</p></li>"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<li><p><strong>Second rule.</strong> text two</p></li>"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn loose_list_items_keep_their_paragraphs() {
+        let (_dir, course, by_file) = fixture_course();
+        let html = render_doc(
+            "- first paragraph\n\n  second paragraph\n",
+            &course,
+            &by_file,
+        );
+        assert!(html.contains("<li><p>first paragraph</p><p>second paragraph</p></li>"), "{html}");
+    }
 
     fn tags(chunk: &str) -> Vec<WidgetTag> {
         let mut diags = Vec::new();
@@ -899,24 +1003,7 @@ mod tests {
 
     #[test]
     fn link_resolution_rules() {
-        use crate::content::course::load_course_dir;
-        use std::fs;
-
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("01-a.md"),
-            "---\ntitle: A\n---\nsee [b](02-b.md) and [img](pic.png)",
-        )
-        .unwrap();
-        fs::write(dir.path().join("02-b.md"), "---\ntitle: B\n---\nnext").unwrap();
-
-        let mut diags = Vec::new();
-        let course = load_course_dir(dir.path(), &mut diags).unwrap();
-        let by_file = course
-            .lessons
-            .iter()
-            .map(|l| (l.file_name.clone(), l.slug.clone()))
-            .collect();
+        let (_dir, course, by_file) = fixture_course();
         let src = Path::new("01-a.md");
         let ctx = MarkdownCtx {
             course: &course,

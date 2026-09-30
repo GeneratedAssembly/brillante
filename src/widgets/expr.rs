@@ -3,6 +3,8 @@
 //! Expressions are parsed server-side into a JSON AST that the client evaluates
 //! directly — the client never receives source text it must `eval`.
 
+use std::collections::BTreeMap;
+
 use serde_json::{json, Value};
 
 use crate::widgets::WidgetError;
@@ -333,6 +335,70 @@ pub fn parse(src: &str, params: &[String]) -> Result<Value, WidgetError> {
     Ok(e.to_ast())
 }
 
+/// Evaluate a JSON AST produced by [parse] against an environment of variable
+/// values. Unknown variables evaluate to NaN; never panics. Mirrors the
+/// client-side evaluator in `interactive.js`/`slider.js` (same function
+/// semantics, including NaN-propagating `min`/`max`).
+pub fn eval_ast(node: &Value, env: &BTreeMap<String, f64>) -> f64 {
+    let Some(a) = node.as_array() else {
+        return f64::NAN;
+    };
+    let tag = a.first().and_then(Value::as_str).unwrap_or("");
+    let child = |i: usize| a.get(i).unwrap_or(&Value::Null);
+    let args = |which: usize| {
+        a.get(which)
+            .and_then(Value::as_array)
+            .map(|xs| {
+                xs.iter()
+                    .map(|n| eval_ast(n, env))
+                    .collect::<Vec<f64>>()
+            })
+            .unwrap_or_default()
+    };
+    match tag {
+        "n" => a.get(1).and_then(Value::as_f64).unwrap_or(f64::NAN),
+        "v" => {
+            let name = a.get(1).and_then(Value::as_str).unwrap_or("");
+            env.get(name).copied().unwrap_or(f64::NAN)
+        }
+        "neg" => -eval_ast(child(1), env),
+        "f" => {
+            let name = a.get(1).and_then(Value::as_str).unwrap_or("");
+            let xs = args(2);
+            match (name, xs.first().copied(), xs.get(1).copied()) {
+                ("exp", Some(x), _) => x.exp(),
+                ("log", Some(x), _) => x.ln(),
+                ("sqrt", Some(x), _) => x.sqrt(),
+                ("abs", Some(x), _) => x.abs(),
+                ("sin", Some(x), _) => x.sin(),
+                ("cos", Some(x), _) => x.cos(),
+                ("min", Some(x), Some(y)) => {
+                    if x.is_nan() || y.is_nan() {
+                        f64::NAN
+                    } else {
+                        x.min(y)
+                    }
+                }
+                ("max", Some(x), Some(y)) => {
+                    if x.is_nan() || y.is_nan() {
+                        f64::NAN
+                    } else {
+                        x.max(y)
+                    }
+                }
+                ("pow", Some(x), Some(y)) => x.powf(y),
+                _ => f64::NAN,
+            }
+        }
+        "+" => eval_ast(child(1), env) + eval_ast(child(2), env),
+        "-" => eval_ast(child(1), env) - eval_ast(child(2), env),
+        "*" => eval_ast(child(1), env) * eval_ast(child(2), env),
+        "/" => eval_ast(child(1), env) / eval_ast(child(2), env),
+        "^" => eval_ast(child(1), env).powf(eval_ast(child(2), env)),
+        _ => f64::NAN,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +464,31 @@ mod tests {
         assert!(parse("min(x)", &[]).is_err()); // arity
         assert!(parse("log(x)", &[]).is_ok());
         assert!(parse("pow(x, 2)", &[]).is_ok());
+    }
+
+    #[test]
+    fn evaluates_ast_matching_client_semantics() {
+        use std::collections::BTreeMap;
+        let mut env = BTreeMap::new();
+        env.insert("x".to_string(), 450.0);
+        env.insert("B".to_string(), 2.0);
+        let ast = parse("(750/x)^4", &[]).unwrap();
+        assert!((eval_ast(&ast, &env) - 7.716049382716049).abs() < 1e-9);
+        let ast = parse("1/4/x^4 * 1e15", &[]).unwrap();
+        assert!((eval_ast(&ast, &env) - 1.0 / 4.0 / 450.0f64.powi(4) * 1e15).abs() < 1e-9);
+        let ast = parse("min(x, 100) + max(B, 9)", &names(&["B"])).unwrap();
+        assert_eq!(eval_ast(&ast, &env), 109.0);
+        let ast = parse("sqrt(-1)", &[]).unwrap();
+        assert!(eval_ast(&ast, &env).is_nan());
+    }
+
+    #[test]
+    fn eval_unknown_variable_is_nan_not_panic() {
+        use std::collections::BTreeMap;
+        let env: BTreeMap<String, f64> = BTreeMap::new();
+        let ast = parse("q + 1", &names(&["q"])).unwrap();
+        assert!(eval_ast(&ast, &env).is_nan());
+        assert!(eval_ast(&json!(["nope"]), &env).is_nan());
+        assert!(eval_ast(&Value::Null, &env).is_nan());
     }
 }

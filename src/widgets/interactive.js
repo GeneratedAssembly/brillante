@@ -59,10 +59,13 @@
     var points = [];
     var xmin = config.domain[0], xmax = config.domain[1];
     var n = config.samples || 240;
+    // Sample against a copy so the caller's env.x (slider value / probe
+    // point used by readouts) is not clobbered by the sweep.
+    var probe = Object.assign({}, env, { x: 0 });
     for (var i = 0; i <= n; i++) {
       var x = xmin + (xmax - xmin) * i / n;
-      env.x = x;
-      var y = evalAst(config.ast, env);
+      probe.x = x;
+      var y = evalAst(config.ast, probe);
       points.push([x, isFinite(y) ? y : null]);
     }
     return points.filter(function (p) { return p[1] !== null; });
@@ -149,6 +152,24 @@
     }
   }
 
+  function specDecimals(spec) {
+    var s = String(spec).replace(/f\s*$/, '');
+    var i = s.lastIndexOf('.');
+    var d = parseInt(i === -1 ? s : s.slice(i + 1), 10);
+    return isNaN(d) ? null : d;
+  }
+  function formatReadout(templateText, config, env) {
+    if (!templateText) return;
+    return String(templateText).replace(
+      /\{([A-Za-z_][A-Za-z0-9_]*)(?::([^{}]+))?\}/g,
+      function (m, name, spec) {
+        var dec = spec === undefined ? 3 : (specDecimals(spec) === null ? 3 : specDecimals(spec));
+        var v = name === 'y' ? evalAst(config.ast, env) : env[name];
+        return v !== undefined && isFinite(v) ? v.toFixed(dec) : '—';
+      }
+    );
+  }
+
   function mount(el) {
     if (el.dataset.mounted) return;
     el.dataset.mounted = 'true';
@@ -169,21 +190,20 @@
       function onInput() {
         env[name] = Number(input.value);
         if (out) out.textContent = Number(input.value).toFixed(decimals);
-        draw(canvas, config, env);
+        draw(canvas, config, env, config.xslider && isFinite(env.x) ? env.x : undefined);
         if (config.readout) {
           var ro = el.querySelector('.interactive-readout');
-          if (ro) {
-            var text = config.readout;
-            Object.keys(env).forEach(function (k) {
-              text = text.split('{' + k + '}').join(Number(env[k]).toFixed(3));
-            });
-            ro.textContent = text;
-          }
+          if (ro) ro.textContent = formatReadout(config.readout, config, env);
         }
       }
       input.addEventListener('input', onInput);
     });
-    var schedule = function () { draw(canvas, config, env); };
+    if (env.x === undefined) {
+      env.x = (config.domain[0] + config.domain[1]) / 2;
+    }
+    var schedule = function () {
+      draw(canvas, config, env, config.xslider && isFinite(env.x) ? env.x : undefined);
+    };
     schedule();
     var raf = null;
     if (config.animate) {
@@ -200,13 +220,7 @@
     }
     if (config.readout) {
       var ro = el.querySelector('.interactive-readout');
-      if (ro) {
-        var text = config.readout;
-        Object.keys(env).forEach(function (k) {
-          text = text.split('{' + k + '}').join(Number(env[k]).toFixed(3));
-        });
-        ro.textContent = text;
-      }
+      if (ro) ro.textContent = formatReadout(config.readout, config, env);
     }
     if (window.ResizeObserver) {
       var ro = new ResizeObserver(function () { schedule(); });

@@ -9,6 +9,7 @@ pub mod quiz;
 pub mod resource_link;
 pub mod slider;
 pub mod stepper;
+pub mod template;
 
 use std::collections::HashMap;
 use leptos::prelude::*;

@@ -3,3 +3,4 @@
 # Only the reference course ships with the repo; personal courses stay local.
 /content/*
 !/content/getting-started
+!/content/collapse

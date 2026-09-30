@@ -1,20 +1,33 @@
 (function () {
   'use strict';
   var KEY = 'brillante.progress.v1';
+  var ACK_KEY = 'brillante.ack.v1';
 
-  function load() {
+  function loadKey(key) {
     try {
-      var raw = JSON.parse(localStorage.getItem(KEY) || '{}');
+      var raw = JSON.parse(localStorage.getItem(key) || '{}');
       return raw && typeof raw === 'object' ? raw : {};
     } catch (e) {
       return {};
     }
   }
 
-  function save(data) {
+  function load() {
+    return loadKey(KEY);
+  }
+
+  function loadAcks() {
+    return loadKey(ACK_KEY);
+  }
+
+  function saveKey(key, data) {
     try {
-      localStorage.setItem(KEY, JSON.stringify(data));
+      localStorage.setItem(key, JSON.stringify(data));
     } catch (e) { /* storage unavailable */ }
+  }
+
+  function save(data) {
+    saveKey(KEY, data);
   }
 
   function isDone(data, course, lesson) {
@@ -80,8 +93,8 @@
       if (Array.isArray(parsed)) ids = parsed;
     } catch (e) { ids = []; }
     if (!ids.length) return;
-    function acknowledged() {
-      var data = load();
+function acknowledged() {
+      var data = loadAcks();
       for (var i = 0; i < ids.length; i++) {
         if (data[ids[i]]) return true;
       }
@@ -93,7 +106,7 @@
     paint();
     document.addEventListener('brillante:ack', paint);
     window.addEventListener('storage', function (e) {
-      if (!e.key || e.key === KEY) paint();
+      if (!e.key || e.key === ACK_KEY) paint();
     });
   }
 

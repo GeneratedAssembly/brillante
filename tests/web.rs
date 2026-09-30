@@ -64,6 +64,21 @@ url = "https://ocw.mit.edu/courses/2-71-optics-spring-2009/"
 source = "MIT OpenCourseWare"
 kind = "video"
 description = "Video lectures mirrored by this fixture."
+
+[widgets."com.example.fixture.slider_ratio"]
+label = "Wavelength"
+min = 380
+max = 750
+step = 5
+initial = 450
+display = "{value} nm — {result:.1}× vs 650 nm"
+readout = "(650/x)^4"
+
+[widgets."com.example.fixture.int_probe"]
+expression = "1.5 + 0.5 / (x * x)"
+domain = [0.4, 2.0]
+xlabel = "distance x"
+readout = "f({x:0.1f}) = {y:0.3f}"
 "##;
 
 const LESSON_WELCOME: &str = r#"---
@@ -82,6 +97,12 @@ Welcome to the **fixture** course, with *italics*, `inline code`, and
 | Widget config | `config.toml` |
 
 > Quoted material renders as a blockquote.
+
+Ground rules:
+
+- **Bold lead.** trailing text
+- **Another lead.** more text
+- see <https://example.com/docs> for reference
 
 ```rust
 fn main() {
@@ -119,7 +140,11 @@ section: extras
 
 <Widget type="slider" id="com.example.fixture.slider_oven" />
 
+<Widget type="slider" id="com.example.fixture.slider_ratio" />
+
 <Widget type="flashcard" id="com.example.fixture.card_flip" />
+
+<Widget type="interactive" id="com.example.fixture.int_probe" />
 "#;
 
 const LESSON_PLOTS: &str = r#"---
@@ -351,6 +376,7 @@ async fn site_assets_served() {
     let (status, body) = get(&f.router, "/assets/site.js").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("brillante.progress.v1"));
+    assert!(body.contains("brillante.ack.v1"));
     let (status, _) = get(&f.router, "/assets/favicon.svg").await;
     assert_eq!(status, StatusCode::OK);
     let (status, _) = get(&f.router, "/assets/nope.css").await;
@@ -395,4 +421,50 @@ async fn sliders_and_plots_render_values() {
     let (_, body) = get(&f.router, "/course/fixture-course/plots").await;
     assert!(body.contains(r#"data-widget-type="plot""#));
     assert!(body.contains("Exponential growth"));
+}
+
+#[tokio::test]
+async fn tight_lists_keep_inline_elements_in_one_paragraph() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/course/fixture-course/welcome").await;
+    assert!(
+        body.contains("<li><p><strong>Bold lead.</strong> trailing text</p></li>"),
+        "a bold lead must not split its list item into multiple paragraphs"
+    );
+    assert!(
+        body.contains("<li><p>see <a href=\"https://example.com/docs\""),
+        "autolinks must stay inside the item's paragraph"
+    );
+    assert!(!body.contains("</strong><p>"), "inline tags must not start a new <p>");
+    assert!(!body.contains("</p><a"), "links must not sit between two <p>s");
+}
+
+#[tokio::test]
+async fn slider_renders_computed_readout() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/course/fixture-course/sliders").await;
+    assert!(
+        body.contains("450 nm — 4.4× vs 650 nm"),
+        "the slider must render the evaluated readout at its initial value"
+    );
+    assert!(body.contains("readoutAst"));
+    assert!(!body.contains("(650/x)^4"), "the client must not receive the source expression");
+}
+
+#[tokio::test]
+async fn interactive_renders_x_slider_and_evaluated_readout() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/course/fixture-course/sliders").await;
+    assert!(
+        body.contains(r#"data-param="x""#),
+        "a readout referencing x/y must get an adjustable x slider"
+    );
+    assert!(
+        body.contains("f(1.2) = 1.847"),
+        "the readout must be server-evaluated at the probe point"
+    );
+    assert!(
+        !body.contains("<div class=\"interactive-readout\">{x"),
+        "raw placeholders must never leak into the rendered readout"
+    );
 }

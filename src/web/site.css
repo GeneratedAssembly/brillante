@@ -418,6 +418,16 @@ main {
   color: #334155;
 }
 
+.lesson-body li > p,
+.lesson-body .task-row > p {
+  margin: 0;
+}
+
+.lesson-body li > p + p,
+.lesson-body .task-row > p + p {
+  margin-top: 0.45em;
+}
+
 .table-wrap {
   overflow-x: auto;
   margin: 18px 0;
