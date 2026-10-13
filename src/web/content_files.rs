@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
 use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 
+use crate::web::access::{self, Visibility};
 use crate::web::AppState;
 
 const BLOCKED_EXTENSIONS: [&str; 1] = ["toml"];
@@ -33,12 +34,27 @@ fn content_type(path: &str) -> &'static str {
 
 pub async fn serve(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((course_slug, rel)): Path<(String, String)>,
 ) -> Response {
     let store = state.store.read().await.clone();
     let Some(course) = store.course(&course_slug) else {
         return (StatusCode::NOT_FOUND, "unknown course").into_response();
     };
+
+    // Private courses hide their static assets too (images must not leak).
+    // Public courses skip the per-user checks entirely. Files answer with 404
+    // rather than a redirect: an <img> can't usefully follow a sign-in flow.
+    let map = state.access.get(state.pb.as_ref()).await;
+    if map
+        .get(&course_slug)
+        .is_some_and(|a| a.visibility == Visibility::Private)
+    {
+        let viewer = access::viewer(&state, &headers).await;
+        if !access::can_view(&course_slug, &viewer, &map) {
+            return (StatusCode::NOT_FOUND, "not found").into_response();
+        }
+    }
 
     let rel_path = PathBuf::from(&rel);
     if rel.is_empty()

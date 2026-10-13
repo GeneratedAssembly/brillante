@@ -1,0 +1,191 @@
+/* Lesson-note drawer. Without JS the panel renders inline after the lesson;
+   notes.js adds body.notebook-drawer to turn it into a fixed right drawer. */
+
+#notebook {
+  margin: 24px 0 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.notebook-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.notebook-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.notebook-head .notebook-index {
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+
+.notebook-status {
+  font-size: 0.85rem;
+  color: #047857;
+}
+
+.notebook-status.notebook-status-error {
+  color: #b91c1c;
+}
+
+.notebook-saved {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  margin-bottom: 10px;
+}
+
+.notebook-saved h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.notebook-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notebook-input {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font: 0.92rem/1.5 ui-monospace, monospace;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.notebook-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.notebook-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notebook-btn {
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font: 600 0.85rem system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.notebook-btn:hover {
+  border-color: var(--accent);
+}
+
+.notebook-preview {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.note-markdown > :first-child {
+  margin-top: 0;
+}
+
+.note-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.notebook-complete {
+  position: relative;
+  margin-top: 6px;
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.notebook-complete [data-note-item] {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 6px 12px;
+  font: 0.88rem system-ui, sans-serif;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.notebook-complete [data-note-item]:hover,
+.notebook-complete [data-note-item][data-active] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.notebook-complete .note-item-kind {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-left: 8px;
+}
+
+body.notebook-drawer #notebook {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  width: min(440px, 100vw);
+  margin: 0;
+  border-radius: 0;
+  border-width: 0 0 0 1px;
+  box-shadow: -14px 0 34px rgba(0, 0, 0, 0.18);
+  transform: translateX(100%);
+  visibility: hidden;
+  transition: transform 0.22s ease, visibility 0s linear 0.22s;
+  overflow: auto;
+}
+
+body.notebook-drawer #notebook.open {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.22s ease, visibility 0s linear 0s;
+}
+
+#notebook-toggle {
+  display: none;
+}
+
+body.notebook-drawer #notebook-toggle {
+  display: block;
+  position: fixed;
+  top: 52%;
+  right: 0;
+  z-index: 30;
+  writing-mode: vertical-rl;
+  padding: 0.9rem 0.45rem;
+  border: 0;
+  border-radius: 0.5rem 0 0 0.5rem;
+  background: var(--muted, #64748b);
+  color: #fff;
+  font: 600 0.75rem/1 system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: -2px 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+body.notebook-drawer #notebook-toggle:hover {
+  filter: brightness(1.08);
+}

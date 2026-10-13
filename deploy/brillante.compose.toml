@@ -1,0 +1,18 @@
+# Config used by compose.yaml (mounted into the brillante container as
+# /srv/brillante/brillante.toml). Relative course paths resolve against the
+# container's /srv/brillante, where ./content and ./courses are mounted.
+
+courses = ["content/getting-started"]
+
+[server]
+port = 3000
+# Public origin of this Brillante instance; used for OAuth redirect URIs.
+# Set to your real domain when deploying (https + secure_cookies below).
+public_url = "http://localhost:3000"
+
+[pocketbase]
+url = "http://pocketbase:8090"
+secure_cookies = false
+# Accounts promoted to the `admin` role on every startup (needs the
+# BRILLANTE_PB_SUPERUSER_* env vars, wired from .env by compose.yaml).
+bootstrap_admins = ["you@example.com"]

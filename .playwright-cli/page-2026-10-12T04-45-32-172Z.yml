@@ -1,0 +1,32 @@
+- generic [active] [ref=f4e1]:
+  - banner [ref=f4e2]:
+    - generic [ref=f4e3]:
+      - link "Brillante" [ref=f4e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f4e5]:
+        - link "Courses" [ref=f4e6] [cursor=pointer]:
+          - /url: /
+        - link "Account" [ref=f4e7] [cursor=pointer]:
+          - /url: /account
+  - main [ref=f4e8]:
+    - generic [ref=f4e9]:
+      - heading "Sign in" [level=1] [ref=f4e10]
+      - paragraph [ref=f4e11]: Sign in to sync course progress across devices. Without an account, progress is kept in this browser only.
+      - generic [ref=f4e12]:
+        - generic [ref=f4e13]:
+          - link "Continue with Google" [ref=f4e14] [cursor=pointer]:
+            - /url: /auth/oauth/oidc
+          - link "Continue with GitHub" [ref=f4e15] [cursor=pointer]:
+            - /url: /auth/oauth/oidc2
+        - paragraph [ref=f4e16]:
+          - generic [ref=f4e17]: or continue with email
+      - generic [ref=f4e18]:
+        - generic [ref=f4e19]:
+          - text: Email
+          - textbox "Email" [ref=f4e20]
+        - generic [ref=f4e21]:
+          - text: Password
+          - textbox "Password" [ref=f4e22]
+        - button "Sign in" [ref=f4e23] [cursor=pointer]
+  - contentinfo [ref=f4e24]:
+    - paragraph [ref=f4e25]: Powered by Brillante — markdown courses with interactive widgets.

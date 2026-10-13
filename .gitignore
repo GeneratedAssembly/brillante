@@ -1,6 +1,16 @@
 /target
 
+# PocketBase local test instance: binary and data stay out of git.
+/pocketbase/pocketbase
+/pocketbase/pb_data/
+
 # Only the reference course ships with the repo; personal courses stay local.
 /content/*
 !/content/getting-started
 !/content/collapse
+
+# Local secrets for the dev PocketBase (Auth0 + superuser).
+/pocketbase/.env
+
+# Compose secrets (see .env.example).
+/.env

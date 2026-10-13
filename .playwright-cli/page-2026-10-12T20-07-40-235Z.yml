@@ -1,0 +1,19 @@
+- generic [active] [ref=f10e1]:
+  - banner [ref=f10e2]:
+    - generic [ref=f10e3]:
+      - link "Brillante" [ref=f10e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f10e5]:
+        - link "Home" [ref=f10e6] [cursor=pointer]:
+          - /url: /
+        - link "Browse" [ref=f10e7] [cursor=pointer]:
+          - /url: /browse
+  - main [ref=f10e8]:
+    - heading "404" [level=1] [ref=f10e9]
+    - paragraph [ref=f10e10]:
+      - text: That page does not exist.
+      - link "Browse all courses" [ref=f10e11] [cursor=pointer]:
+        - /url: /browse
+      - text: .
+  - contentinfo [ref=f10e12]:
+    - paragraph [ref=f10e13]: Powered by Brillante — markdown courses with interactive widgets.

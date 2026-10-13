@@ -1,0 +1,15 @@
+target/
+.git/
+.github/
+.kilo/
+.agents/
+tasks/
+content/
+courses/
+pocketbase/
+.env
+.env.example
+*.md
+compose.yaml
+Dockerfile
+.dockerignore

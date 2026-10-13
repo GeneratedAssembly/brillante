@@ -87,6 +87,28 @@ impl Course {
             .find(|l| l.file_name == file_name)
             .map(|l| l.slug.as_str())
     }
+
+    #[cfg(test)]
+    pub fn test_stub(
+        slug: String,
+        title: String,
+        description: Option<String>,
+        lessons: Vec<Lesson>,
+        dir: std::path::PathBuf,
+    ) -> Course {
+        Course {
+            slug,
+            title,
+            description,
+            accent: None,
+            dir,
+            lessons,
+            sections: Vec::new(),
+            ack_widget_ids: Vec::new(),
+            ack_lesson_slug: None,
+            widget_config: None,
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

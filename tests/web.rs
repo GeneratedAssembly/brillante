@@ -184,6 +184,22 @@ const LOGO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" he
 "##;
 
 fn fixture() -> Fixture {
+    build_fixture(None)
+}
+
+/// Fixture whose state has a PocketBase configured that no test will reach:
+/// exercises the auth-enabled UI and anonymous API behavior without any
+/// network dependency.
+fn fixture_with_auth() -> Fixture {
+    build_fixture(Some(brillante::config::PocketBaseConfig {
+        url: "http://127.0.0.1:1".into(),
+        secure_cookies: false,
+        public_url: "http://127.0.0.1:3000".into(),
+        bootstrap_admins: Vec::new(),
+    }))
+}
+
+fn build_fixture(pocketbase: Option<brillante::config::PocketBaseConfig>) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let course = dir.path().join("fixture-course");
     fs::create_dir_all(course.join("images")).unwrap();
@@ -201,6 +217,7 @@ fn fixture() -> Fixture {
         host: "127.0.0.1".into(),
         port: 0,
         courses: vec![course],
+        pocketbase,
         warnings: Vec::new(),
     };
     Fixture {
@@ -218,6 +235,77 @@ async fn get(router: &axum::Router, path: &str) -> (StatusCode, String) {
     let status = response.status();
     let body = response.into_body().collect().await.unwrap().to_bytes();
     (status, String::from_utf8_lossy(&body).into_owned())
+}
+
+/// GET that keeps the response metadata: (status, Location, Set-Cookie list).
+async fn get_redirect(
+    router: &axum::Router,
+    path: &str,
+) -> (StatusCode, String, Vec<String>) {
+    let response = router
+        .clone()
+        .oneshot(Request::get(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let location = response
+        .headers()
+        .get(axum::http::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let cookies: Vec<String> = response
+        .headers()
+        .get_all(axum::http::header::SET_COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok().map(str::to_string))
+        .collect();
+    (status, location, cookies)
+}
+
+async fn post_form(router: &axum::Router, path: &str, body: &str) -> (StatusCode, String) {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::post(path)
+                .header(
+                    axum::http::header::CONTENT_TYPE,
+                    "application/x-www-form-urlencoded",
+                )
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, String::from_utf8_lossy(&bytes).into_owned())
+}
+
+async fn get_json(router: &axum::Router, path: &str) -> (StatusCode, serde_json::Value) {
+    let (status, body) = get(router, path).await;
+    let json = serde_json::from_str(&body).unwrap_or_default();
+    (status, json)
+}
+
+async fn post_json_with_cookie(
+    router: &axum::Router,
+    path: &str,
+    body: &str,
+    cookie: &str,
+) -> StatusCode {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::post(path)
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .header(axum::http::header::COOKIE, cookie)
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    response.status()
 }
 
 #[tokio::test]
@@ -384,6 +472,42 @@ async fn site_assets_served() {
 }
 
 #[tokio::test]
+async fn scratchpad_renders_on_course_pages_only() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/course/fixture-course/welcome").await;
+    assert!(body.contains(r#"id="scratchpad""#));
+    assert!(body.contains("scratchpad-toggle"));
+    assert!(body.contains("/assets/scratchpad.js"));
+    assert!(body.contains("/assets/scratchpad.css"));
+
+    let (_, body) = get(&f.router, "/course/fixture-course").await;
+    assert!(body.contains(r#"id="scratchpad""#));
+    assert!(body.contains("/assets/scratchpad.js"));
+
+    let (_, body) = get(&f.router, "/").await;
+    assert!(!body.contains(r#"id="scratchpad""#));
+    assert!(!body.contains("/assets/scratchpad.js"));
+
+    let (status, body) = get(&f.router, "/course/does-not-exist").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(!body.contains(r#"id="scratchpad""#));
+}
+
+#[tokio::test]
+async fn scratchpad_assets_served() {
+    let f = fixture();
+    let (status, body) = get(&f.router, "/assets/scratchpad.js").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("pyodide"));
+    assert!(body.contains("brillante.scratch.history.v1"));
+    let (status, body) = get(&f.router, "/assets/scratchpad.css").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("#scratchpad"));
+    let (status, _) = get(&f.router, "/assets/scratchpad.nope").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn admin_endpoints_work() {
     let f = fixture();
     let (status, _) = get(&f.router, "/healthz").await;
@@ -467,4 +591,361 @@ async fn interactive_renders_x_slider_and_evaluated_readout() {
         !body.contains("<div class=\"interactive-readout\">{x"),
         "raw placeholders must never leak into the rendered readout"
     );
+}
+
+#[tokio::test]
+async fn account_page_reports_disabled_without_pocketbase() {
+    let f = fixture();
+    let (status, body) = get(&f.router, "/account").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Accounts are not configured"));
+    let (_, home) = get(&f.router, "/").await;
+    assert!(
+        !home.contains(r#"href="/account""#),
+        "no account link in the header when auth is disabled"
+    );
+}
+
+#[tokio::test]
+async fn login_post_without_pocketbase_redirects_with_error() {
+    let f = fixture();
+    let (status, _) = post_form(&f.router, "/auth/login", "email=a@b.c&password=x").await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn auth_enabled_header_shows_account_link() {
+    let f = fixture_with_auth();
+    let (_, home) = get(&f.router, "/").await;
+    assert!(home.contains(r#"href="/account""#));
+    assert!(home.contains(r#"id="account-link""#));
+    assert!(
+        !home.contains(r#"data-auth="server""#),
+        "anonymous visitors must not get server-backed progress"
+    );
+}
+
+#[tokio::test]
+async fn progress_api_requires_authentication() {
+    let f = fixture_with_auth();
+    let (status, _) = get(&f.router, "/api/progress").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let status =
+        post_json_with_cookie(&f.router, "/api/progress", r#"{"course":"a","lesson":"b","done":true}"#, "").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn progress_api_rejects_garbage_cookie() {
+    let f = fixture_with_auth();
+    let status = post_json_with_cookie(
+        &f.router,
+        "/api/progress",
+        r#"{"course":"a","lesson":"b","done":true}"#,
+        "brillante.session=not.a.jwt",
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn auth_me_reports_anonymous_without_network() {
+    let f = fixture_with_auth();
+    let (status, json) = get_json(&f.router, "/auth/me").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["enabled"], serde_json::json!(true));
+    assert_eq!(json["authenticated"], serde_json::json!(false));
+}
+
+#[tokio::test]
+async fn oauth_start_without_pocketbase_redirects_disabled() {
+    let f = fixture();
+    let (status, location, _) = get_redirect(&f.router, "/auth/oauth/google").await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location, "/account?error=disabled");
+}
+
+#[tokio::test]
+async fn oauth_start_degrades_when_pocketbase_unreachable() {
+    let f = fixture_with_auth();
+    let (status, location, _) = get_redirect(&f.router, "/auth/oauth/oidc").await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location, "/account?error=unavailable");
+}
+
+#[tokio::test]
+async fn oauth_callback_without_flow_cookie_redirects_expired() {
+    let f = fixture();
+    let (status, location, cookies) = get_redirect(
+        &f.router,
+        "/auth/oauth/google/callback?code=abc&state=def",
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location, "/account?error=oauth_state");
+    assert!(
+        cookies.iter().any(|c| c.starts_with("brillante.oauth=;")),
+        "the flow cookie must be cleared on callback: {cookies:?}"
+    );
+}
+
+#[tokio::test]
+async fn account_page_has_no_oauth_buttons_when_pb_unreachable() {
+    let f = fixture_with_auth();
+    let (_, body) = get(&f.router, "/account").await;
+    assert!(!body.contains("oauth-button"));
+    assert!(!body.contains("/auth/oauth/"));
+}
+
+#[tokio::test]
+async fn lesson_progress_ui_renders_anonymously() {
+    let f = fixture_with_auth();
+    let (_, body) = get(&f.router, "/course/fixture-course/widgets").await;
+    assert_eq!(body.matches("mark-complete").count(), 1);
+    assert!(!body.contains(r#"data-auth="server""#));
+    let (_, course) = get(&f.router, "/course/fixture-course").await;
+    assert!(course.contains(r#"<span data-progress-count>0</span>"#));
+}
+
+#[tokio::test]
+async fn catalog_without_accounts_has_no_subscribe_ui() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/").await;
+    assert!(body.contains("Fixture Course"));
+    assert!(!body.contains("/my/subscriptions"), "no form posts without accounts");
+    assert!(!body.contains("My courses"), "no my-courses section without accounts");
+    // Courses with no access record stay public by default.
+    let (status, _) = get(&f.router, "/course/fixture-course").await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admin_pages_404_without_accounts() {
+    let f = fixture();
+    let (status, _) = get(&f.router, "/admin/courses").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = get(&f.router, "/admin/users").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn subscriptions_require_sign_in() {
+    let f = fixture();
+    let (status, location) = post_form_redirect(
+        &f.router,
+        "/my/subscriptions",
+        "course=fixture-course&action=subscribe&next=/",
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location, "/account?next=%2F");
+}
+
+#[tokio::test]
+async fn catalog_degrades_to_anonymous_when_pb_unreachable() {
+    let f = fixture_with_auth();
+    let (_, body) = get(&f.router, "/").await;
+    assert!(body.contains("Fixture Course"), "no access record means public");
+    assert!(
+        !body.contains("/my/subscriptions"),
+        "an unresolvable viewer must not see subscribe controls"
+    );
+    assert!(!body.contains("My courses"));
+}
+
+#[tokio::test]
+async fn browse_lists_courses_with_nav_links() {
+    let f = fixture();
+    let (status, body) = get(&f.router, "/browse").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Browse courses"));
+    assert!(body.contains("Fixture Course"));
+    assert!(body.contains("6 lessons"));
+    assert!(body.contains("/course/fixture-course"));
+    // topbar navigation on every page
+    assert!(body.contains(r#"<a href="/">Home</a>"#));
+    assert!(body.contains(r#"<a href="/browse">Browse</a>"#));
+    let (_, lesson) = get(&f.router, "/course/fixture-course/widgets").await;
+    assert!(lesson.contains(r#"<a href="/browse">Browse</a>"#), "nav on lesson pages");
+    assert!(lesson.contains(r#"class="crumb""#));
+    let (_, not_found) = get(&f.router, "/nope").await;
+    assert!(not_found.contains("Browse all courses"));
+}
+
+#[tokio::test]
+async fn browse_without_accounts_has_no_subscribe_ui() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/browse").await;
+    assert!(body.contains("Fixture Course"));
+    assert!(
+        !body.contains("/my/subscriptions"),
+        "no form posts without accounts"
+    );
+}
+
+#[tokio::test]
+async fn browse_degrades_to_anonymous_when_pb_unreachable() {
+    let f = fixture_with_auth();
+    let (_, body) = get(&f.router, "/browse").await;
+    assert!(body.contains("Fixture Course"), "no access record means public");
+    assert!(
+        !body.contains("/my/subscriptions"),
+        "an unresolvable viewer must not see subscribe controls"
+    );
+}
+
+#[tokio::test]
+async fn browse_search_matches_courses_and_lessons() {
+    let f = fixture();
+    let (status, body) = get(&f.router, "/browse?q=widgets").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("1 course(s) match"), "summary counts courses");
+    assert!(body.contains("/course/fixture-course/widgets"), "lesson deep link");
+    assert!(body.contains("class=\"search-lessons\""));
+    assert!(body.contains("Fixture Course"), "matched course card");
+    assert!(
+        body.contains("value=\"widgets\""),
+        "search box retains the query"
+    );
+}
+
+#[tokio::test]
+async fn browse_search_is_case_insensitive_and_scoped() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/browse?q=SLIDERS").await;
+    assert!(body.contains("1 course(s) match"));
+    assert!(body.contains("/course/fixture-course/sliders"));
+    let (_, body) = get(&f.router, "/browse?q=zzz-nothing").await;
+    assert!(body.contains("No matches"));
+    assert!(body.contains("0 course(s) match"));
+}
+
+#[tokio::test]
+async fn browse_unfiltered_shows_all_and_no_summary() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/browse").await;
+    assert!(body.contains("Browse courses"));
+    assert!(!body.contains("course(s) match"));
+    assert!(body.contains("class=\"search-form\""));
+}
+
+/// POST form helper that keeps the redirect target.
+async fn post_form_redirect(router: &axum::Router, path: &str, body: &str) -> (StatusCode, String) {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::post(path)
+                .header(
+                    axum::http::header::CONTENT_TYPE,
+                    "application/x-www-form-urlencoded",
+                )
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let location = response
+        .headers()
+        .get(axum::http::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    (status, location)
+}
+
+#[tokio::test]
+async fn notebook_surfaces_need_accounts() {
+    let f = fixture();
+    let (status, _) = get(&f.router, "/notes/fixture-course").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "no accounts means no notebooks");
+    let (status, _) = get(&f.router, "/course/fixture-course/welcome").await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, lesson) = get(&f.router, "/course/fixture-course/welcome").await;
+    assert!(!lesson.contains("id=\"notebook\""), "no drawer without accounts");
+    let (status, _) = post_form(
+        &f.router,
+        "/notes/fixture-course/welcome",
+        "body=hello&anchor=&here_title=",
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn notebook_degrades_when_pb_unreachable() {
+    let f = fixture_with_auth();
+    let (_, lesson) = get(&f.router, "/course/fixture-course/welcome").await;
+    assert!(
+        !lesson.contains("id=\"notebook\""),
+        "unresolvable viewer (PB down) renders no drawer"
+    );
+    let (status, _) = get(&f.router, "/notes/fixture-course").await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "index redirects to sign-in");
+}
+
+#[tokio::test]
+async fn admin_delete_requires_admin() {
+    let f = fixture();
+    let (status, _) = post_form(
+        &f.router,
+        "/admin/users/delete",
+        "user_id=abc&confirm=on",
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = get(&f.router, "/admin").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let f = fixture_with_auth();
+    let (status, _) = get(&f.router, "/admin").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "unreachable PB degrades to no admin");
+    let (status, _) = post_form(&f.router, "/admin/users/delete", "user_id=abc&confirm=on").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn tutor_is_inert_without_configuration() {
+    let f = fixture();
+    let (_, lesson) = get(&f.router, "/course/fixture-course/welcome").await;
+    assert!(!lesson.contains("id=\"tutor\""), "no drawer without accounts");
+    let (status, _) = get(&f.router, "/admin/tutor").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, body) = post_json(
+        &f.router,
+        "/api/tutor/chat",
+        r#"{"course":"fixture-course","lesson":"welcome","messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "no pb means no tutor");
+    let _: &str = &body;
+
+    let f = fixture_with_auth();
+    let (_, lesson) = get(&f.router, "/course/fixture-course/welcome").await;
+    assert!(
+        !lesson.contains("id=\"tutor\""),
+        "unreachable pb means not ready"
+    );
+    let (status, _) = post_json(
+        &f.router,
+        "/api/tutor/chat",
+        r#"{"course":"fixture-course","lesson":"welcome","messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+async fn post_json(router: &axum::Router, path: &str, body: &str) -> (StatusCode, String) {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::post(path)
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, String::from_utf8_lossy(&bytes).into_owned())
 }

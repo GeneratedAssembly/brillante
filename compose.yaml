@@ -1,0 +1,62 @@
+services:
+  pb-init:
+    image: pocketbase/pocketbase:0.40.4
+    # One-shot: creates the superuser on a fresh volume before serve starts.
+    # PocketBase 0.23+ dropped the old env-var auto-create, and the official
+    # image is scratch-based (no shell), so we invoke the binary's own
+    # subcommand; compose expands these vars from .env.
+    command:
+      - superuser
+      - upsert
+      - ${PB_SUPERUSER_EMAIL:?set PB_SUPERUSER_EMAIL in .env}
+      - ${PB_SUPERUSER_PASSWORD:?set PB_SUPERUSER_PASSWORD in .env}
+      - --dir=/pb/pb_data
+    volumes:
+      - pb_data:/pb/pb_data
+    restart: "no"
+
+  pocketbase:
+    image: pocketbase/pocketbase:0.40.4
+    command: serve --http=0.0.0.0:8090 --dir=/pb/pb_data
+    volumes:
+      - pb_data:/pb/pb_data
+      - ./pocketbase/pb_migrations:/pb/pb_migrations:ro
+      - ./pocketbase/pb_hooks:/pb/pb_hooks:ro
+    environment:
+      # Optional Auth0-backed SSO (Google + GitHub); the pb_hooks sync
+      # script no-ops when these are unset.
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET:-}
+    ports:
+      - "8090:8090" # admin UI at /_/; drop this mapping to keep PB internal
+    depends_on:
+      pb-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  brillante:
+    build: .
+    volumes:
+      - ./deploy/brillante.compose.toml:/srv/brillante/brillante.toml:ro
+      - ./content:/srv/brillante/content:ro
+      - ./courses:/srv/brillante/courses:ro
+    environment:
+      # Used only by the startup bootstrap that keeps bootstrap_admins
+      # promoted (and hidden tutor api_key reads/writes). Same superuser.
+      BRILLANTE_PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL:?set PB_SUPERUSER_EMAIL in .env}
+      BRILLANTE_PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD:?set PB_SUPERUSER_PASSWORD in .env}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - pocketbase
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  pb_data:

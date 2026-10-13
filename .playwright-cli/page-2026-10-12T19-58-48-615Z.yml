@@ -1,0 +1,46 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - link "Brillante" [ref=f2e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f2e5]:
+        - link "Home" [ref=f2e6] [cursor=pointer]:
+          - /url: /
+        - link "Browse" [ref=f2e7] [cursor=pointer]:
+          - /url: /browse
+        - link "Tutor Admin" [ref=f2e8] [cursor=pointer]:
+          - /url: /account
+        - link "Admin" [ref=f2e9] [cursor=pointer]:
+          - /url: /admin/courses
+  - main [ref=f2e10]:
+    - navigation [ref=f2e11]:
+      - link "Courses" [ref=f2e12] [cursor=pointer]:
+        - /url: /admin/courses
+      - link "Users" [ref=f2e13] [cursor=pointer]:
+        - /url: /admin/users
+      - link "Tutor" [ref=f2e14] [cursor=pointer]:
+        - /url: /admin/tutor
+    - generic [ref=f2e15]:
+      - heading "Virtual tutor" [level=1] [ref=f2e16]
+      - paragraph [ref=f2e17]: When enabled, signed-in learners get an Ask-the-tutor panel on lesson pages. The tutor sees the current lesson and course outline as context. Any OpenAI-compatible endpoint works (OpenAI, OpenRouter, Groq, …).
+      - generic [ref=f2e18]:
+        - generic [ref=f2e19]:
+          - checkbox "Enable the tutor" [ref=f2e20]
+          - text: Enable the tutor
+        - generic [ref=f2e21]:
+          - generic [ref=f2e22]: Endpoint (base URL)
+          - textbox "Endpoint (base URL)" [ref=f2e23]:
+            - /placeholder: https://api.openai.com/v1
+        - generic [ref=f2e24]:
+          - generic [ref=f2e25]: API key
+          - textbox "API key Leave blank to keep the stored key." [ref=f2e26]:
+            - /placeholder: not set
+          - generic [ref=f2e27]: Leave blank to keep the stored key.
+        - generic [ref=f2e28]:
+          - generic [ref=f2e29]: Model
+          - textbox "Model Exact model name for your endpoint; not validated here." [ref=f2e30]:
+            - /placeholder: gpt-4o-mini
+          - generic [ref=f2e31]: Exact model name for your endpoint; not validated here.
+        - button "Save" [ref=f2e32] [cursor=pointer]
+  - contentinfo [ref=f2e33]:
+    - paragraph [ref=f2e34]: Powered by Brillante — markdown courses with interactive widgets.

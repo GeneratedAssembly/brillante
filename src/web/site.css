@@ -68,6 +68,11 @@ a:hover {
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #ffffff));
 }
 
+.topnav {
+  display: flex;
+  gap: 1em;
+}
+
 .topnav a {
   color: var(--muted);
   font-weight: 500;
@@ -77,6 +82,11 @@ a:hover {
 .topnav a:hover {
   color: var(--accent);
   text-decoration: none;
+}
+
+main.row {
+  display: flex;
+  gap: 4em;
 }
 
 main {
@@ -117,6 +127,146 @@ main {
   padding-bottom: 20px;
 }
 
+.browse-head {
+  text-align: center;
+  padding: 36px 0 20px;
+}
+
+.browse-head h1 {
+  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  letter-spacing: -0.03em;
+  margin: 0 0 6px;
+}
+
+.search-form {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.search-form input[type="search"] {
+  flex: 0 1 420px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 0.95rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.search-form input[type="search"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.search-summary {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 4px 0 14px;
+}
+
+.browse-empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 24px 0;
+}
+
+.search-lessons {
+  margin-top: 10px;
+}
+
+.search-lessons ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.search-lessons li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.search-lesson-course {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.course-card-progress {
+  display: block;
+  margin-top: 8px;
+}
+
+.progress-track {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.progress-text {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.profile-stats {
+  display: flex;
+  gap: 22px;
+  margin: 14px 0;
+}
+
+.profile-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-stat b {
+  font-size: 1.4rem;
+}
+
+.profile-stat span {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.profile-email,
+.profile-member {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 2px 0;
+}
+
+.profile-inprogress ul {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.profile-inprogress li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.browse-prompt {
+  text-align: center;
+  color: var(--muted);
+  padding: 8px 0 20px;
+}
+
 .course-card {
   display: flex;
   flex-direction: column;
@@ -132,9 +282,24 @@ main {
 }
 
 .course-card:hover {
-  text-decoration: none;
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
+}
+
+.course-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text);
+  flex: 1;
+}
+
+.course-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
 }
 
 .course-card h3 {
@@ -153,6 +318,69 @@ main {
   color: var(--accent);
   font-size: 0.85rem;
   font-weight: 700;
+}
+
+.my-courses {
+  margin-bottom: 30px;
+}
+
+.my-courses-empty {
+  color: var(--muted);
+  margin: 6px 0 14px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.chip-private {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.chip-role {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.chip-form {
+  display: inline-flex;
+}
+
+.chip-remove {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.chip-remove:hover {
+  color: #b91c1c;
+}
+
+.subscribe-form {
+  display: inline-flex;
+}
+
+.button-small {
+  padding: 5px 14px;
+  font-size: 0.85rem;
+}
+
+.subscribe-form .button.subscribed {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #047857;
 }
 
 .crumb {
@@ -549,4 +777,403 @@ main {
   .pager-next {
     margin-left: 0;
   }
+}
+
+.auth-panel {
+  max-width: 460px;
+  margin: 0 auto 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 26px 28px;
+}
+
+.auth-lede {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.auth-form input {
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 0.95rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.auth-form .button {
+  align-self: flex-start;
+}
+
+.auth-error {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #7f1d1d;
+  font-size: 0.9rem;
+}
+
+.oauth-intro {
+  margin-top: 16px;
+}
+
+.oauth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oauth-buttons .button {
+  justify-content: center;
+  align-self: stretch;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-roles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 10px 0;
+}
+
+/* Admin pages */
+
+.admin-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-tab {
+  padding: 8px 14px;
+  border-radius: 10px 10px 0 0;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.admin-tab.active {
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+}
+
+.admin-tab:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.admin-panel {
+  max-width: 860px;
+  margin: 0 auto 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+}
+
+.admin-panel h1 {
+  margin: 0 0 6px;
+}
+
+.admin-lede {
+  color: var(--muted);
+  font-size: 0.92rem;
+  margin: 0 0 18px;
+}
+
+.admin-saved {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  color: #065f46;
+  font-size: 0.9rem;
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.admin-search {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.admin-search input {
+  flex: 1;
+  max-width: 320px;
+}
+
+.admin-search input,
+.role-add-form input,
+.course-settings-form input,
+.course-settings-form select,
+.grant-add-form input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  background: var(--bg);
+}
+
+.admin-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.user-delete-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.admin-confirm-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.button-danger {
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.button-danger:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+
+.admin-row:last-child {
+  border-bottom: 0;
+}
+
+.admin-user-name {
+  font-weight: 600;
+  min-width: 140px;
+}
+
+.admin-user-email {
+  color: var(--muted);
+  font-size: 0.9rem;
+  min-width: 200px;
+  overflow-wrap: anywhere;
+}
+
+.admin-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.role-add-form {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.role-add-form input {
+  width: 140px;
+}
+
+.admin-muted {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.tutor-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 480px;
+  margin-top: 10px;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.admin-field input[type="text"],
+.admin-field input[type="password"] {
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font: 0.92rem system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.admin-field input[type="text"]:focus,
+.admin-field input[type="password"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.admin-field-check {
+  flex-direction: row;
+  align-items: center;
+}
+
+.admin-pager {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.admin-pager-info {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.admin-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.admin-course-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.admin-course-title {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-course-slug {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.course-settings-form {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.course-settings-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.course-settings-form input {
+  width: 320px;
+  max-width: 100%;
+}
+
+.grant-block h3 {
+  margin: 14px 0 8px;
+  font-size: 0.92rem;
+}
+
+.grant-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.grant-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+.grant-revoke-form {
+  display: inline-flex;
+}
+
+.grant-add-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.grant-add-form input {
+  width: 260px;
+  max-width: 100%;
 }

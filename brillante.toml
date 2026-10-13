@@ -1,5 +1,12 @@
-courses = ["content/getting-started", "courses/collapse", "courses/crlb", "courses/optics-course"]
+courses = ["content/getting-started", "courses/collapse", "courses/crlb", "courses/optics-course", "courses/diffractive-optics"]
 
 [server]
 host = "127.0.0.1"
 port = 3000
+
+[pocketbase]
+url = "http://127.0.0.1:8090"
+secure_cookies = false
+# Ensured admin on every server start (needs BRILLANTE_PB_SUPERUSER_EMAIL /
+# _PASSWORD in the environment; pocketbase/.env carries dev values).
+bootstrap_admins = ["richbai90@gmail.com"]

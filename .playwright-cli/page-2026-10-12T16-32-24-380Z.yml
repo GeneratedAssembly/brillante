@@ -1,0 +1,44 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "Brillante" [ref=e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=e5]:
+        - link "Home" [ref=e6] [cursor=pointer]:
+          - /url: /
+        - link "Browse" [ref=e7] [cursor=pointer]:
+          - /url: /browse
+        - link "Account" [ref=e8] [cursor=pointer]:
+          - /url: /account
+  - main [ref=e9]:
+    - generic [ref=e10]:
+      - heading "Learn something brilliant." [level=1] [ref=e11]
+      - paragraph [ref=e12]: Interactive courses, served straight from markdown.
+    - generic [ref=e13]:
+      - 'link "Why Reconstruction Collapses Why MSE-trained models rebuild the mean and discard the signature: conditional-mean averaging, metamers, Parseval''s energy accounting, spectral bias, ill-conditioned optics — and the losses that fight back. 7 lessons" [ref=e15] [cursor=pointer]':
+        - /url: /course/collapse
+        - heading "Why Reconstruction Collapses" [level=3] [ref=e16]
+        - paragraph [ref=e17]: "Why MSE-trained models rebuild the mean and discard the signature: conditional-mean averaging, metamers, Parseval's energy accounting, spectral bias, ill-conditioned optics — and the losses that fight back."
+        - generic [ref=e18]: 7 lessons
+      - 'link "The Cramér–Rao Bound for Event-Based Sensors A complete derivation from first principles: probability toolkit, score, Fisher information, the event-sensor forward model, the marked point-process likelihood, and the spectral Fisher matrix — every equation with expandable term definitions, machine-checked in Lean 4. 10 lessons" [ref=e21] [cursor=pointer]':
+        - /url: /course/crlb
+        - heading "The Cramér–Rao Bound for Event-Based Sensors" [level=3] [ref=e22]
+        - paragraph [ref=e23]: "A complete derivation from first principles: probability toolkit, score, Fisher information, the event-sensor forward model, the marked point-process likelihood, and the spectral Fisher matrix — every equation with expandable term definitions, machine-checked in Lean 4."
+        - generic [ref=e24]: 10 lessons
+      - 'link "Diffractive Optics: Design, Fabrication, and Test A complete engineering treatment of diffractive optical elements — wavefront thinking, scalar and electromagnetic diffraction theory, lens and grating design, lithographic fabrication, metrology and testing, and real applications — derived from O''Shea, Suleski, Kathman & Prather, ''Diffractive Optics: Design, Fabrication, and Test'' (SPIE Tutorial Text TT62). 18 lessons" [ref=e27] [cursor=pointer]':
+        - /url: /course/diffractive-optics
+        - 'heading "Diffractive Optics: Design, Fabrication, and Test" [level=3] [ref=e28]'
+        - paragraph [ref=e29]: "A complete engineering treatment of diffractive optical elements — wavefront thinking, scalar and electromagnetic diffraction theory, lens and grating design, lithographic fabrication, metrology and testing, and real applications — derived from O'Shea, Suleski, Kathman & Prather, 'Diffractive Optics: Design, Fabrication, and Test' (SPIE Tutorial Text TT62)."
+        - generic [ref=e30]: 18 lessons
+      - 'link "Getting Started with Brillante A short tour of Brillante: markdown lessons, interactive widgets, and how raw HTML gets kept out of your pages. 4 lessons" [ref=e33] [cursor=pointer]':
+        - /url: /course/getting-started
+        - heading "Getting Started with Brillante" [level=3] [ref=e34]
+        - paragraph [ref=e35]: "A short tour of Brillante: markdown lessons, interactive widgets, and how raw HTML gets kept out of your pages."
+        - generic [ref=e36]: 4 lessons
+      - link "Optics Optical science with elementary engineering applications — geometric optics, wave optics, and imaging — derived from MIT OCW 2.71/2.710 Optics (Spring 2009) and OpenStax University Physics III. For undergraduates with electromagnetism and differential-equations background. 19 lessons" [ref=e39] [cursor=pointer]:
+        - /url: /course/optics
+        - heading "Optics" [level=3] [ref=e40]
+        - paragraph [ref=e41]: Optical science with elementary engineering applications — geometric optics, wave optics, and imaging — derived from MIT OCW 2.71/2.710 Optics (Spring 2009) and OpenStax University Physics III. For undergraduates with electromagnetism and differential-equations background.
+        - generic [ref=e42]: 19 lessons
+  - contentinfo [ref=e44]:
+    - paragraph [ref=e45]: Powered by Brillante — markdown courses with interactive widgets.

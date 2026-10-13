@@ -1,185 +1,192 @@
-# TODO: CRLB Course — First-Principles Rebuild
+# Task List: Navigation, Browse + Search, Dashboard Home, Richer Profile
 
-Plan: `tasks/plan.md`. Source material: `~/code/crlb_prove` (read-only).
+Plan: `tasks/plan.md`. Repo verification commands: `cargo test`,
+`cargo clippy`, `cargo run` (server at http://127.0.0.1:3000, PB via
+`./pocketbase/run.sh`). UI sign-off via `playwright-cli`.
 
-## Phase 1: Platform
+## Task 1: Add `/browse` page + restructure topbar nav
 
-## Task 1: Math widget definitions panel
-**Description:** Add optional `definitions` key to `math` widget config: array of
-`{symbol, meaning, link?}`. Render collapsed-by-default `<details>` under the equation.
+**Description:** Introduce a dedicated all-courses page `GET /browse` showing
+every course the viewer can see (same `can_view` filtering and card markup as
+today's catalog section), and restructure the `Shell` topbar into real
+navigation: brand → `/`, **Home** → `/`, **Browse** → `/browse`, Account,
+Admin. `/` itself keeps its current content in this task (dashboard change is
+Task 3); only the nav and the new route land.
+
 **Acceptance criteria:**
-- [ ] `definitions` absent → rendering identical to today
-- [ ] present → collapsed panel, expandable, symbol in mono, link renders as anchor
-- [ ] invalid entries produce a clear `WidgetError::Invalid`
+- [x] `GET /browse` renders a `course-grid` of viewable courses; subscribe toggle present when signed in with auth enabled; Private chip preserved
+- [x] Topbar contains Home and Browse links on every page (incl. 404 and admin pages)
+- [x] Private courses a viewer cannot see are absent from `/browse` (anonymous and signed-in-without-access)
+
 **Verification:**
-- [ ] `cargo test`
-- [ ] Manual: scratch lesson with/without definitions
-**Dependencies:** None
-**Files:** `src/widgets/math.rs`, `src/widgets/math.css`
-**Scope:** S
+- [x] `cargo test` passes; new fixture tests in `tests/web.rs`: browse lists fixture courses; nav links present; private fixture course hidden from anonymous browse
+- [x] `cargo clippy` clean; `cargo build` succeeds
+- [x] Manual: `curl -s localhost:3000/browse | grep -c course-card` > 0 with server running
 
-## Task 2: Stepper widget
-**Description:** Multi-step worked derivation: `steps = [{title, tex?, text?, note?}]`;
-server renders all steps, JS shows one at a time with Prev/Next and step counter.
+**Dependencies:** None
+**Files likely touched:**
+- `src/web/pages.rs` (browse handler, Shell nav)
+- `src/web/mod.rs` (route)
+- `src/web/site.css` (topnav tweaks)
+- `tests/web.rs`
+
+**Estimated scope:** Medium (3-4 files)
+
+## Task 2: Server-rendered search on `/browse`
+
+**Description:** Add a pure search module (`src/web/search.rs`): given the
+store, query, viewer and access map, return grouped hits — courses whose
+title/description contain `q` (case-insensitive), plus lessons whose title
+contains `q` rendered as sub-links under their course. Wire `GET /browse?q=`
+to a plain `<form method="get">` search box; render "N results" or an empty
+state. No JS required.
+
 **Acceptance criteria:**
-- [ ] ≥2 steps required; each step has tex or text
-- [ ] keyboard accessible (buttons, arrow keys)
-- [ ] KaTeX renders step tex
+- [x] `search(store, q, viewer, map)` is a pure fn with colocated unit tests: case-insensitivity, course + lesson hits, empty query → no search performed, **private-course hits suppressed** for viewers without access
+- [x] `/browse?q=…` renders matched courses with lesson deep-links (`/course/<c>/<l>`); non-matching cards hidden
+- [x] The search box retains the query after submit; empty-result state links back to unfiltered `/browse`
+
 **Verification:**
-- [ ] `cargo test`; manual click-through in browser
-**Dependencies:** None
-**Files:** `src/widgets/stepper.rs/js/css`, `src/widgets/mod.rs` (registry)
-**Scope:** M
+- [x] `cargo test` (unit + `tests/web.rs` fixture: lesson-title hit deep-links correctly; private fixture course never appears in results anonymously)
+- [x] `cargo clippy` clean
+- [x] Manual: `curl -s 'localhost:3000/browse?q=loops'` shows the fixture lesson link
 
-## Task 3: Interactive widget (curve + parameter sliders)
-**Description:** Client-evaluated function plot with bound parameter sliders. Server parses
-`expression` into a safe AST (no eval); client evaluates AST per slider move and redraws.
-Config: `expression`, `domain`, `parameters`, `xlabel`, `ylabel`, `readout?`.
-**Acceptance criteria:**
-- [ ] Server-side parser accepts `+ - * / ^`, parens, numbers, `x`, params, `exp log sqrt abs`
-- [ ] Unknown tokens rejected at config load with clear error
-- [ ] Slider drag redraws curve without page reload; readout template `{name}` substitution
-- [ ] No `eval`/`new Function` in shipped JS
-**Verification:**
-- [ ] `cargo test` (parser unit tests)
-- [ ] Manual: dither curve B/(B+af)² vs sliders B, f
-**Dependencies:** None
-**Files:** `src/widgets/interactive.rs/js/css`, `src/widgets/mod.rs`
-**Scope:** L (split 3a parser+tests, 3b render+js+css, 3c registry+docs if >5 files)
-
-## Checkpoint: Platform
-- [ ] `cargo build` && `cargo test` clean
-- [ ] Scratch lesson exercises all three additions without error shells
-- [ ] Scratch lesson removed
-
-## Phase 2: Foundation lessons
-
-## Task 4: Lesson 1 — Notation and Probability Toolkit
-**Description:** Random variables, expectation, parametric distribution `p(x;θ)` vs
-conditioning, likelihood vs probability, log-likelihood. Glossary flashcards.
-**Acceptance criteria:**
-- [ ] All notation defined here is used consistently later; stable heading anchors
-- [ ] ≥2 quizzes, ≥3 flashcards, ≥1 math widget with definitions
-**Verification:** server render + manual read
 **Dependencies:** Task 1
-**Files:** `content/crlb/01-notation.md`, `content/crlb/config.toml`
-**Scope:** S
+**Files likely touched:**
+- `src/web/search.rs` (new)
+- `src/web/pages.rs`
+- `src/web/mod.rs` (module registration)
+- `src/web/site.css`
+- `tests/web.rs`
 
-## Task 5: Lesson 2 — Estimation and the Score
-**Description:** Unbiased estimator; score function; zero-mean property (derived, not cited).
-Stepper walks the interchange-of-differentiation argument.
+**Estimated scope:** Medium (4-5 files)
+
+## Checkpoint: Navigation (after Tasks 1-2)
+
+- [x] `cargo test` + `cargo clippy` clean
+- [x] Browse + search respect course privacy in fixture tests
+- [x] Review with human before Phase 2
+
+## Task 3: My Courses progress cards + personalized home
+
+**Description:** Extract a shared `my_courses` section: cards show a progress
+bar (completed/total lessons) and a **Continue** button linking to the first
+unfinished lesson (or **Review** → last lesson when complete) — computed by a
+pure fn with unit tests. Home becomes persona-aware: signed in → dashboard
+(My Courses section; empty state points to `/browse`; hero shrinks), signed
+out → today's hero + catalog unchanged. Home fetches server progress only
+when signed in.
+
 **Acceptance criteria:**
-- [ ] Score and zero-mean shown as math widgets with definitions panels
-- [ ] Stepper derivation of E[V]=0; ≥2 quizzes
-**Verification:** server render + manual read
-**Dependencies:** Task 2, 4
-**Files:** `content/crlb/02-score.md`, `content/crlb/config.toml`
-**Scope:** S
+- [x] `continue_target(course, completed_set) -> (href, label)` pure fn, unit tested (first unfinished, all-done → review, empty course → outline)
+- [x] Signed-in home renders My Courses cards with `x/y` progress and a Continue link; unsubscribed courses are NOT on the dashboard
+- [x] Signed-out (and auth-disabled) home markup is byte-compatible with today's tests (`home_lists_registered_courses` still passes unmodified)
+- [x] PB unreachable → dashboard renders cards without progress (degrade, never error)
 
-## Task 6: Lesson 3 — Fisher Information and the CRLB
-**Description:** Both FIM forms + equivalence; Cauchy–Schwarz to the matrix bound; curvature
-intuition. Interactive: distribution width vs I(θ) and CRLB floor.
+**Verification:**
+- [x] `cargo test`: fixture asserts progress bar + continue href for a signed-in viewer with seeded progress rows (extend the `fixture_with_auth` pattern); existing home tests untouched and green
+- [x] `cargo clippy` clean
+- [x] Manual: sign in via dev PB, complete a lesson, reload `/`, confirm bar + Continue target
+
+**Dependencies:** Task 1 (nav context; browse link target for empty state)
+**Files likely touched:**
+- `src/web/pages.rs` (home, shared section, card component)
+- `src/web/site.css` (progress bar styles)
+- `tests/web.rs`
+
+**Estimated scope:** Medium (3 files)
+
+## Task 4: Enriched `/account` profile panel
+
+**Description:** Replace the sparse signed-in panel with a profile: display
+name + email, role chips (exists), **member since** (PB record `created`,
+parsed leniently into `AuthUser`), stat row (courses subscribed · lessons
+completed · courses in progress), and an in-progress list reusing Task 3's
+continue cards. Sign-out form unchanged. Signed-out panel unchanged.
+
 **Acceptance criteria:**
-- [ ] FIM, CRLB widgets with definitions; interactive width↔information widget
-- [ ] ≥2 quizzes, ≥2 flashcards
-**Verification:** server render; numerics spot-check
-**Dependencies:** Task 3, 5
-**Files:** `content/crlb/03-fisher.md`, `content/crlb/config.toml`
-**Scope:** M
+- [x] `RecordJson`/`AuthUser` parse `created` leniently (`#[serde(default)]`, unit test incl. missing field)
+- [x] Signed-in `/account` shows email, member-since date, and the three stats computed from subscriptions + progress (not from course-page data)
+- [x] In-progress list shows only subscribed courses with 0 < completed < total, each with a Continue link
+- [x] Auth-disabled behavior untouched (`account_page_reports_disabled_without_pocketbase` passes)
 
-## Task 7: Lesson 4 — The Poisson Count Model
-**Description:** PMF → log-likelihood → score → I(Λ)=Δt/Λ, derived step by step; slider
-explores Δt/Λ trade-off; note that this algebra is exact and survives unchanged.
+**Verification:**
+- [x] `cargo test` (unit for parse; `tests/web.rs` fixture for panel markup when signed in) + `POCKETBASE_TEST_URL=… cargo test --test pocketbase_live` sanity for created-field round trip
+- [x] `cargo clippy` clean
+- [x] Manual: signed-in `/account` in browser shows stats matching actual progress
+
+**Dependencies:** Task 3 (shared continue/progress component)
+**Files likely touched:**
+- `src/pb.rs` (created field + tests)
+- `src/web/auth.rs` (account page)
+- `src/web/pages.rs` (exposed shared section)
+- `src/web/site.css`
+- `tests/web.rs`
+
+**Estimated scope:** Medium (4-5 files)
+
+## Checkpoint: Core Features (after Tasks 3-4)
+
+- [x] End-to-end signed-in flow: browse → search → subscribe → home dashboard → continue lesson → account stats — verified against dev PB
+- [x] `cargo test` + `cargo clippy` clean
+- [x] Review with human before Phase 3
+
+## Task 5: Live-stack tests for dashboard/profile
+
+**Description:** Extend `tests/pocketbase_live.rs` to cover the new
+signed-in surfaces against a real PB: after signup + subscribe + progress
+mark, `GET /` contains the continue href and progress count; `GET /account`
+contains member-since and stat numbers; `GET /browse?q=` for a
+role-gated private course is empty for the plain user and present after
+grant.
+
 **Acceptance criteria:**
-- [ ] All four steps as math widgets with definitions; ≥2 quizzes
-- [ ] Slider demonstrates information falling with rate
-**Verification:** server render
-**Dependencies:** Task 6
-**Files:** `content/crlb/04-poisson.md`, `content/crlb/config.toml`
-**Scope:** S
+- [x] New live tests pass with `POCKETBASE_TEST_URL` set and skip cleanly without it (existing pattern)
+- [x] Tests create their own throwaway users/courses via the fixture, never touch shipped content
 
-## Checkpoint: Foundation
-- [ ] Lessons 1–4 render clean; no forward references to undefined symbols
-- [ ] All definition links resolve
-- [ ] Review before proceeding
+**Verification:**
+- [x] `POCKETBASE_TEST_URL=http://127.0.0.1:8090 cargo test --test pocketbase_live` green
+      (note: private-course search gating is covered by `search.rs` unit tests;
+      a live variant needs admin credentials in the test env — deferred)
+- [x] `cargo test` green (live suite skipped)
 
-## Phase 3: The event sensor
+**Dependencies:** Tasks 3, 4
+**Files likely touched:**
+- `tests/pocketbase_live.rs`
 
-## Task 8: Lesson 5 — A Sensor That Sees Change
-**Description:** Event-sensor physics: log front-end, contrast threshold, signed trigger
-conditions with reference reset (presented as the correct design), material vs fixed-pixel
-derivative. Animation: pixel accumulating log-intensity, crossing ±C.
+**Estimated scope:** Small (1 file)
+
+## Task 6: Docs — AGENTS.md + README
+
+**Description:** Document the new routes (`/browse`, `?q=`), nav structure,
+dashboard/profile behavior, and the search privacy policy ("search results
+are gated by `can_view`; private courses never appear as hits") in AGENTS.md
+(repo map + gotchas) and README (commands/screens note).
+
 **Acceptance criteria:**
-- [ ] Trigger condition and q_j material-derivative split as math widgets with definitions
-- [ ] ≥1 animation/interactive (event stream vs moving source), ≥2 quizzes
-**Verification:** server render
-**Dependencies:** Task 4 (2, 3)
-**Files:** `content/crlb/05-sensor.md`, `content/crlb/config.toml`
-**Scope:** M
+- [x] AGENTS.md route table / repo map reflects `src/web/search.rs` and `/browse`
+- [x] README describes home-persona behavior and search for readers
 
-## Task 9: Lesson 6 — Sum Before Log
-**Description:** Hyperspectral encoding H, s, h_j; background B_j; gated intensity
-I_j = B_j + a f_j; contrast q_j; the B=0 degeneracy; sensitivity engine ∇_s q_j.
-**Acceptance criteria:**
-- [ ] Eqs (5)–(10) as math widgets with definitions; Lean badges where proven
-- [ ] Interactive observability–dilution curve with live sliders; degeneracy shown numerically
-- [ ] ≥2 quizzes, ≥2 flashcards
-**Verification:** server render; numerics match Eq. (10)
-**Dependencies:** Task 8
-**Files:** `content/crlb/06-sum-before-log.md`, `content/crlb/config.toml`
-**Scope:** M
+**Verification:**
+- [x] Docs match the shipped markup (spot-check classes/hrefs against pages.rs)
 
-## Task 10: Lesson 7 — Events as a Point Process
-**Description:** Marked point process likelihood, survival integral, score, FIM (Eq. 15);
-binned derivation Eqs (16)–(21) via stepper; exactness for piecewise-constant rates.
-**Acceptance criteria:**
-- [ ] Eqs (12)–(21) as math widgets with definitions; survival integral interactive
-- [ ] Stepper walks binned score→FIM; ≥2 quizzes
-**Verification:** server render
-**Dependencies:** Task 9
-**Files:** `content/crlb/07-point-process.md`, `content/crlb/config.toml`
-**Scope:** M
+**Dependencies:** Tasks 1-4
+**Files likely touched:**
+- `AGENTS.md`
+- `README.md`
 
-## Checkpoint: Core
-- [ ] Derivation chain 1→7 internally consistent
-- [ ] Interactive numerics spot-checked against equations
-- [ ] End-to-end read-through complete
-
-## Phase 4: Results and verification
-
-## Task 11: Lesson 8 — The Spectral Fisher Matrix
-**Description:** Rate chain rule with polarity (Eq. 23), spectral block (Eq. 24), three
-regimes, kernel/gauge caveats, Schur complement (Eqs. 27–28), reconstruction (Eq. 25).
-**Acceptance criteria:**
-- [ ] All equations as math widgets with definitions + Lean badges
-- [ ] Interactive: spectral entry vs B_j with sliders; ≥2 quizzes
-**Verification:** server render
-**Dependencies:** Task 10
-**Files:** `content/crlb/08-spectral-fim.md`, `content/crlb/config.toml`
-**Scope:** M
-
-## Task 12: Lesson 9 — Scaling with Light
-**Description:** Three noise domains; photon/circuit/optical; conditional scaling; the CRLB∝N
-claim and why it fails (historical aside — the only place the original paper is discussed).
-**Acceptance criteria:**
-- [ ] Interactive dual-curve scaling plot with adjustable N; ≥2 quizzes
-**Verification:** server render
-**Dependencies:** Task 11
-**Files:** `content/crlb/09-scaling.md`, `content/crlb/config.toml`
-**Scope:** S
-
-## Task 13: Lesson 10 — Machine-Verified in Lean 4
-**Description:** Theorem ↔ equation map table, four proof layers, scope (what is not proven),
-links to `~/code/crlb_prove/lean/CRLB.lean`.
-**Acceptance criteria:**
-- [ ] Table complete against `CRLB.lean` theorem list; ≥1 quiz
-**Verification:** server render; theorem names match file
-**Dependencies:** Task 11
-**Files:** `content/crlb/10-lean.md`, `content/crlb/config.toml`
-**Scope:** S
+**Estimated scope:** Small (2 files)
 
 ## Checkpoint: Complete
-- [ ] All acceptance criteria met; old comparison-style content fully replaced
-- [ ] `cargo test` passes; no widget error shells anywhere in the course
-- [ ] Old lesson files (`01-foundation.md` … `07-lean.md`) removed after replacement
-- [ ] Ready for review
+
+- [x] All task acceptance criteria met
+- [x] `cargo test`, `cargo clippy` clean; live suite green against dev PB
+- [x] Playwright sign-off: nav on every page; signed-out `/` unchanged; `/browse` + search results; signed-in dashboard with progress; `/account` stats
+- [x] Ready for human review
+
+## Final UI sign-off (playwright-cli, after Task 4)
+
+- [x] `open http://127.0.0.1:3000/` signed out → hero + catalog, nav shows Home/Browse/Account
+- [x] `/browse?q=<fixture term>` → matched cards + lesson deep-links
+- [x] Sign in (dev account) → `/` dashboard shows subscribed course with bar + Continue; `/account` shows email, member-since, stats
+- [x] `cookie-list` shows only `brillante.session` (httpOnly) — no new cookie surface

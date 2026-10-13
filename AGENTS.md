@@ -16,12 +16,26 @@ Two very different kinds of work happen here. Know which one you are doing:
 
 ```sh
 cargo run            # serve at http://127.0.0.1:3000 (reads brillante.toml)
+docker compose up -d --build   # full stack (Brillante + PocketBase); see compose.yaml,
+                     # deploy/brillante.compose.toml, and .env (from .env.example)
 cargo run -- --course content/crlb   # serve an extra course directory
 cargo test           # unit tests (colocated) + integration tests (tests/web.rs)
 cargo clippy
 ```
 
 CLI flags: `-c/--config <path>`, `--host`, `-p/--port`, `--course <dir>` (repeatable).
+
+Accounts (PocketBase) — for auth + synced course progress in dev:
+
+```sh
+./pocketbase/run.sh          # podman: start/restart PB at http://127.0.0.1:8090
+./pocketbase/run.sh --logs   # ... and follow logs
+./pocketbase/run.sh --stop   # remove the container
+POCKETBASE_TEST_URL=http://127.0.0.1:8090 cargo test --test pocketbase_live
+```
+
+The live test suite skips itself (passes trivially) unless `POCKETBASE_TEST_URL`
+is set, so `cargo test` never depends on a running PocketBase.
 
 While the server runs:
 
@@ -39,7 +53,14 @@ Logs go through `tracing`; `RUST_LOG` filters them (default `brillante=info,info
 ## Repo map
 
 ```
-brillante.toml          server config: host, port, registered course dirs
+Dockerfile              multi-stage rust:slim → debian-slim release build
+compose.yaml            brillante + pocketbase (+ pb-init superuser bootstrap)
+deploy/brillante.compose.toml  config mounted into the container
+.env.example            secrets template for compose (PB superuser, Auth0)
+brillante.toml          server config: host, port, registered course dirs,
+                        [pocketbase] section (auth; omit to disable accounts)
+pocketbase/             local dev PocketBase: Containerfile, run.sh,
+                        pb_migrations/ (schema — committed), pb_data/ (gitignored)
 content/
   getting-started/      reference course demonstrating the content model
   crlb/                 real course under development (see tasks/)
@@ -48,27 +69,54 @@ tasks/todo.md           per-task breakdown with acceptance criteria
 src/
   main.rs               CLI parsing, tracing init, server startup
   config.rs             brillante.toml loading + content/ auto-discovery
-  app.rs                AppState (content store + widget registry), router
+  app.rs                AppState (content store + widget registry + PB client), router
   render.rs             leptos SSR → HTML string helper
   diag.rs               Diagnostic { warning, error } model
+  pb.rs                 PocketBase HTTP client (auth, progress, notebooks CRUD); no SDK
   content/
     mod.rs              ContentStore: loads course dirs, dedupes slugs
     course.rs           Course/Lesson model, course.toml + config.toml, slugify
     frontmatter.rs      YAML (---) / TOML (+++) frontmatter split + parse
     markdown.rs         pulldown-cmark → leptos views; widget tag scanning;
-                        link rewriting; math rendering; HTML suppression
+                        link rewriting; math rendering; HTML suppression;
+                        notebook shorthand expansion (expand_note_links) + heading ids
   widgets/
     mod.rs              WidgetRegistry, WidgetInstance config accessors,
                         widget_shell / error_shell, resolve()
     expr.rs             safe arithmetic-expression parser (AST) for `interactive`
+    math.js             KaTeX loader; exposes window.brillanteMath(root) for
+                        re-rendering math in injected fragments (tutor, notes preview)
     quiz|slider|plot|flashcard|math|compare|stepper|interactive|acknowledge|resource-link  → .rs + .js + .css
   web/
     mod.rs              axum router, reload + diagnostics endpoints
-    pages.rs            catalog, course outline, lesson page (leptos views)
+    pages.rs            home (dashboard when signed in, catalog when not),
+                       /browse catalog + search results, course outline,
+                       lesson page (leptos views); server-rendered progress,
+                       auth-aware header, Shell nav
+    search.rs           pure course/lesson substring search (privacy-gated)
+    access.rs           AccessMap visibility cache, Viewer, can_view
+    auth.rs             /account (sign-in panel + signed-in profile: roles,
+                       member-since, stats, keep-going), /auth/{login,signup,logout,me}
+    oauth.rs            /auth/oauth/{provider} start + callback (PKCE flow cookie)
+    subscriptions.rs    POST /my/subscriptions (subscribe/unsubscribe)
+    admin.rs            /admin (→users), /admin/users (list/search/roles/delete),
+                        /admin/courses (visibility/roles/grants),
+                        /admin/tutor (enable/endpoint/key/model) — admin-gated
+    tutor.rs            virtual tutor: settings cache, context builder, POST /api/tutor/chat
+    session.rs          httpOnly session cookie (PB JWT), decode/refresh, Authed extractor
+    progress.rs         /api/progress GET/POST (owner-scoped via PB rules)
+    notes.rs            lesson notebooks: GET /notes/{course} index,
+                        POST /notes/{course}/{lesson} save, POST /api/notes/preview,
+                        lesson-page drawer view
     assets.rs           site assets + per-widget script.js/style.css
+    scratchpad.js/.css  right-margin Python scratch pad (Pyodide, lazy CDN load)
+    notes.js/.css       note drawer: open/close, preview fetch, @ and [[ autocomplete
+    tutor.js/.css       tutor chat drawer: toggle, message list, POST /api/tutor/chat
     content_files.rs    static file serving from course dirs (sandboxed)
 tests/web.rs            integration tests (self-contained: builds a fixture
                         course in a temp dir, asserts nothing about shipped content)
+tests/pocketbase_live.rs  end-to-end auth/progress against a real PB
+                        (skipped unless POCKETBASE_TEST_URL is set)
 ```
 
 Stack: Rust (edition 2024 — let-chains are used), axum 0.8 (path syntax is
@@ -250,13 +298,105 @@ When you add or change widget config keys, update this file and `README.md`.
   (`src/render.rs`). Interactivity lives in the per-widget JS.
 - **Sandboxed content serving.** `/content/{course}/{path}` blocks `.toml`
   files, dotfiles, and traversal; keep it that way.
+- **Visibility gates every surface.** Catalog, `/browse`, search results,
+  course/lesson pages, and content files all pass through
+  `access::can_view`; anything that lists or matches courses must filter
+  through it so private courses (and their lesson titles) never leak.
 - **State model.** `ContentStore` sits behind `Arc<RwLock<Arc<...>>>`;
   `POST /admin/reload` rebuilds it and swaps the `Arc`. The widget registry is
-  fixed at startup. Lesson progress is client-side only
-  (`localStorage`, key `brillante.progress.v1`) — no accounts, no DB.
+  fixed at startup. Lesson progress is **dual-mode**: when a `[pocketbase]`
+  section is configured and the visitor is signed in, completions are stored
+  server-side in PocketBase (owner-scoped by API rules) and rendered into the
+  HTML; anonymous visitors (and any server with auth disabled) fall back to
+  `localStorage` key `brillante.progress.v1`. The two never mix on a page —
+  `site.js` branches on `body[data-auth="server"]`.
+- **Auth is server-brokered, tokens stay httpOnly.** The browser talks only to
+  Brillante's own `/auth/*` and `/api/progress` endpoints; the Rust server holds
+  the PocketBase JWT in the `brillante.session` httpOnly/SameSite=Lax cookie and
+  forwards it as a Bearer token. Never expose the PB token to client JS, and
+  never let the client name the user it claims to be — `user` on create is
+  checked against `@request.auth.id` by PB rules.
 - **Style.** Colocated `#[cfg(test)]` unit tests for parsing/validation logic;
   small pure functions; edition-2024 idioms; no comments unless explaining a
   non-obvious invariant.
+
+## PocketBase integration (auth, sessions, progress)
+
+Accounts are optional: **no `[pocketbase]` section in `brillante.toml` means
+auth is fully disabled** — no `/account` link, `/api/progress` returns 401, and
+progress stays in `localStorage`. The shipped dev config points at
+`http://127.0.0.1:8090`; set `secure_cookies = true` when serving over HTTPS.
+
+- **Schema is migrations, not the admin UI.** `pocketbase/pb_migrations/*.js`
+  (committed) define the `progress` collection and its rules; PocketBase applies
+  them on `serve` (automigrate). The `users` auth collection keeps stock defaults
+  (open self-registration is intentional). Edit schema by adding a migration, not
+  by hand — `run.sh` mounts `pocketbase/` so `pb_migrations/` is picked up.
+- **`progress` record** = `(user → users, course, lesson, completed)`, one row per
+  completed lesson, unique on `(user, course, lesson)`. `complete` is an upsert
+  (a duplicate create is treated as success); `uncomplete` finds by an escaped
+  filter then deletes (absent row is success). Both are idempotent.
+- **`notebook_entries` record** = `(user → users, course, lesson, anchor,
+  here_title, body, created, updated)`, one row per `(user, course, lesson)`
+  (`src/web/notes.rs`). All rules are owner-scoped; create pins
+  `@request.body.user = @request.auth.id`. The upsert is create-then-patch on
+  the unique-index 400; an empty body deletes.
+- **Ownership is enforced at two layers.** PocketBase API rules scope every
+  request to `@request.auth.id`; Brillante additionally validates course/lesson
+  as slugs before calling PB. The server never trusts a client-supplied user id.
+- **Admin role & bootstrap.** The `admin` role in `users.roles` (mirrored by
+  the `is_admin` boolean) gates `/admin/*` and every PB management rule
+  (`@request.auth.is_admin = true`). `users.manageRule` is admin too — without
+  it PocketBase hides `email` from the admin user list. `brillante.toml`
+  `[pocketbase] bootstrap_admins = ["you@example.com"]` plus
+  `BRILLANTE_PB_SUPERUSER_EMAIL`/`_PASSWORD` in the server environment
+  re-grants those accounts on startup (background task with retries; warns and
+  skips when the env vars are absent). `app::load_bootstrap_env()` reads those
+  two variables from `pocketbase/.env` in `main` before the runtime starts
+  (env wins), so a plain `cargo run` bootstraps with no shell setup.
+  `pocketbase/.env` (gitignored, sourced by `run.sh`) holds the dev superuser +
+  Auth0 secrets.
+- **Account deletion** (`POST /admin/users/delete`) requires the `confirm`
+  checkbox, refuses self-deletion and the last admin, and cascades every
+  user-scoped row (progress, grants, subscriptions, notebook entries).
+- **Session = the PB JWT in an httpOnly cookie** (`src/web/session.rs`). It is
+  decoded (not signature-verified — PB verifies on every proxied call) to read
+  `id`/`exp`; tokens are refreshed via `auth-refresh` when within 24h of expiry,
+  rotating the cookie. `/auth/me` always verifies server-side before reporting
+  the user.
+- **`src/pb.rs` is a hand-rolled REST client** (reqwest) — there is no PocketBase
+  Rust SDK. `{:key}` + `values[]` binding is Go/JSVM-only and **not** supported
+  over REST; filter values are inlined via `filter_quote`.
+- **Progressive enhancement.** All auth works with JS off (plain form
+  POSTs + redirects); `site.js` only adds the account label and async
+  mark-complete. Never reintroduce a client-side PocketBase dependency.
+
+## Lesson notebooks (per-user notes)
+
+Signed-in visitors get a Note drawer on every lesson page (`src/web/notes.rs`
++ `notes.js`/`notes.css`): one note per (user, course, lesson), stored in the
+owner-scoped `notebook_entries` PB collection. Key rules:
+
+- **Markdown + LaTeX only, same renderer as lessons** but with
+  `MarkdownCtx::widgets: false` — `<Widget>` tags in note bodies render as
+  escaped literal text; notes can never reference course widget configs.
+- **Shorthand** is expanded by `markdown::expand_note_links` (pure,
+  code-immune) before pulldown: `[[lesson-slug]]` → lesson link (unknown slug
+  → existing `dead-link` span + tracing warning), `@here` → lesson link +
+  `#heading-anchor` for the section captured at save time (the drawer's
+  autocomplete fills the hidden `anchor`/`here_title` fields; typing `@` lists
+  h2/h3 headings of the current lesson, typing `[[` lists course lessons).
+- **Anchor validation is silent-drop:** at save (and preview) time the anchor
+  must exist in `markdown::heading_ids()` of the lesson body, else the anchor
+  and title are cleared and `@here` renders as plain text — never reject the
+  user's whole note.
+- **Gating:** every note surface passes `access::can_view` and slug-validates
+  course/lesson against the ContentStore **before** any PocketBase call (the
+  REST API has no server-side binding; `filter_quote` escaping assumes
+  validated values). PB unreachable → the drawer is hidden and pages still
+  render; per-user content is never logged into loader diagnostics.
+- `GET /notes/{course}` is the per-course index in lesson order; entries whose
+  lesson vanished from disk render with a "lesson removed" chip.
 
 ## Working on the CRLB course (current project)
 
@@ -299,3 +439,19 @@ that shape content decisions:
 - Quiz `answer` defaults to index 0 when omitted — set it explicitly.
 - KaTeX is loaded from a CDN at runtime; math falls back to raw TeX text
   offline (that is expected behavior, not a bug).
+- The scratch pad's Python runtime (Pyodide) is also CDN-loaded, lazily on
+  first drawer open; offline the console stays disabled (expected, like KaTeX).
+  It renders on pages with `data-course` (course outline + lessons) and is
+  compiled into the binary via `include_str!` — Rust rebuild required after
+  editing `scratchpad.js`/`scratchpad.css`.
+- The note drawer's `notes.js`/`notes.css` are `include_str!`d the same way
+  (rebuild after edits). The drawer renders inline (fully usable with JS off);
+  `notes.js` adds `body.notebook-drawer` to restyle it as a fixed panel.
+- PB 0.40 `hidden` fields are **write-restricted to superuser tokens** (an
+  admin-token write is silently dropped, not rejected) and never returned by
+  the API — which is why `/admin/tutor` persists `api_key` through the
+  server's superuser token (`tutor::superuser_token`).
+- PB 0.23+ `TextField` has **no `maxSelect`** — multi-value free-form fields
+  must be `JSONField`s, and API rules cannot exactly match JSON array elements
+  (`?=` matches nothing, `~` matches substrings). That is why admin gating
+  uses the mirrored boolean `users.is_admin` (see migration 1791780764).

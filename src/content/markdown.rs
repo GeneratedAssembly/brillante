@@ -7,7 +7,7 @@ use pulldown_cmark::{
     Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
 };
 
-use crate::content::course::Course;
+use crate::content::course::{Course, Lesson};
 use crate::diag::Diagnostic;
 use crate::widgets::{resolve, WidgetInstance, WidgetRegistry};
 
@@ -28,6 +28,10 @@ pub struct MarkdownCtx<'a> {
     pub course: &'a Course,
     pub source: &'a Path,
     pub lessons_by_file: &'a HashMap<String, String>,
+    /// False for notebook rendering: `<Widget>` tags and any other raw HTML
+    /// are emitted as escaped literal text instead of being scanned and
+    /// resolved, so user notes can never reference course widget configs.
+    pub widgets: bool,
 }
 
 pub struct MarkdownOutput {
@@ -56,13 +60,7 @@ pub fn render_markdown(
     registry: &WidgetRegistry,
     diags: &mut Vec<Diagnostic>,
 ) -> MarkdownOutput {
-    let mut opts = Options::empty();
-    opts.insert(
-        Options::ENABLE_TABLES
-            | Options::ENABLE_STRIKETHROUGH
-            | Options::ENABLE_TASKLISTS
-            | Options::ENABLE_MATH,
-    );
+    let opts = md_options();
     let parser = Parser::new_ext(src, opts);
     let mut p = MdParser {
         events: parser.peekable(),
@@ -243,13 +241,7 @@ pub fn scan_widget_tags_in_markdown(
     src: &str,
     source: &Path,
 ) -> Vec<WidgetTag> {
-    let mut opts = Options::empty();
-    opts.insert(
-        Options::ENABLE_TABLES
-            | Options::ENABLE_STRIKETHROUGH
-            | Options::ENABLE_TASKLISTS
-            | Options::ENABLE_MATH,
-    );
+    let opts = md_options();
     let mut scratch = Vec::new();
     let mut tags = Vec::new();
     for event in Parser::new_ext(src, opts) {
@@ -457,6 +449,10 @@ impl<'a> MdParser<'a> {
                     out.push(view! { <hr /> }.into_any());
                 }
                 Event::Html(h) | Event::InlineHtml(h) => {
+                    if !self.ctx.widgets {
+                        pending.push(h.to_string().into_any());
+                        continue;
+                    }
                     let widgets = self.html_widgets(&h);
                     if !widgets.is_empty() {
                         if !pending.is_empty() {
@@ -523,8 +519,12 @@ impl<'a> MdParser<'a> {
                     nodes.push(Node::Inline(view! { <br /> }.into_any()))
                 }
                 Event::Html(h) | Event::InlineHtml(h) => {
-                    for w in self.html_widgets(&h) {
-                        nodes.push(Node::Widget(w));
+                    if !self.ctx.widgets {
+                        nodes.push(Node::Inline(h.to_string().into_any()));
+                    } else {
+                        for w in self.html_widgets(&h) {
+                            nodes.push(Node::Widget(w));
+                        }
                     }
                 }
                 Event::InlineMath(tex) => {
@@ -663,6 +663,9 @@ impl<'a> MdParser<'a> {
                         Some(Event::End(_)) | None => break,
                         Some(_) => {}
                     }
+                }
+                if !self.ctx.widgets {
+                    return vec![paragraph(vec![chunk.into_any()])];
                 }
                 self.html_widgets(&chunk)
             }
@@ -839,6 +842,184 @@ fn table_cell(tag: &str, align: Option<&Alignment>, nodes: Vec<AnyView>) -> AnyV
     }
 }
 
+fn md_options() -> Options {
+    Options::ENABLE_TABLES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_MATH
+}
+
+/// Byte ranges of fenced code blocks, inline code, and raw HTML — regions
+/// where notebook shorthand must stay literal.
+pub(crate) fn protected_spans(src: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    for (event, range) in Parser::new_ext(src, md_options()).into_offset_iter() {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) | Event::End(TagEnd::CodeBlock) => {
+                spans.push((range.start, range.end))
+            }
+            Event::Code(_) | Event::Html(_) | Event::InlineHtml(_) => {
+                spans.push((range.start, range.end))
+            }
+            _ => {}
+        }
+    }
+    spans
+}
+
+fn is_protected(spans: &[(usize, usize)], at: usize) -> bool {
+    spans.iter().any(|(s, e)| at >= *s && at < *e)
+}
+
+/// Destination for a shorthand link that resolves to no lesson; ends in
+/// `.md` and matches no lesson file, so `resolve_link` renders the existing
+/// dead-link span.
+const DEAD_NOTE_DEST: &str = "notebook-missing.md";
+
+fn sanitize_link_text(raw: &str) -> String {
+    raw.replace(['[', ']'], "").trim().to_string()
+}
+
+/// `@here` resolution context for one notebook entry: the lesson the note
+/// belongs to plus the anchor captured when it was saved.
+#[derive(Debug, Clone, Copy)]
+pub struct NoteHere<'a> {
+    pub lesson: &'a str,
+    pub anchor: Option<&'a str>,
+    pub title: Option<&'a str>,
+}
+
+fn lesson_file<'a>(lessons: &'a [Lesson], slug: &str) -> Option<&'a str> {
+    lessons
+        .iter()
+        .find(|l| l.slug == slug)
+        .map(|l| l.file_name.as_str())
+}
+
+/// Expand the notebook shorthand (`[[lesson-slug]]`, `@here`) into plain
+/// markdown links before the note body goes through `render_markdown`.
+/// Unknown slugs become dead-link spans; everything inside code or raw HTML
+/// is left untouched.
+pub fn expand_note_links(src: &str, lessons: &[Lesson], here: Option<NoteHere<'_>>) -> String {
+    let spans = protected_spans(src);
+    let mut out = String::with_capacity(src.len());
+    let mut last = 0usize;
+    let mut i = 0usize;
+    while i < src.len() {
+        if is_protected(&spans, i) {
+            i += 1;
+            continue;
+        }
+        if let Some((consumed, replacement)) =
+            match_shorthand(&src[i..], src[..i].chars().next_back(), lessons, here)
+        {
+            out.push_str(&src[last..i]);
+            out.push_str(&replacement);
+            i += consumed;
+            last = i;
+            continue;
+        }
+        i += 1;
+    }
+    out.push_str(&src[last..]);
+    out
+}
+
+/// If `src` (a suffix of the full source) begins with a shorthand token,
+/// return (consumed_len, replacement_markdown). `prev` is the character
+/// before the token in the full source.
+fn match_shorthand(
+    src: &str,
+    prev: Option<char>,
+    lessons: &[Lesson],
+    here: Option<NoteHere<'_>>,
+) -> Option<(usize, String)> {
+    if let Some(rest) = src.strip_prefix("[[") {
+        let inner_end = rest.find("]]")?;
+        let inner = &rest[..inner_end];
+        if inner.is_empty() || inner.contains('[') || inner.contains(']') {
+            return None;
+        }
+        let slug = inner.trim();
+        if slug.is_empty() {
+            return None;
+        }
+        let consumed = 2 + inner_end + 2;
+        let replacement = match lessons.iter().find(|l| l.slug == slug) {
+            Some(lesson) => format!(
+                "[{}]({})",
+                sanitize_link_text(&lesson.title),
+                lesson.file_name
+            ),
+            None => {
+                tracing::warn!("notebook link [[{slug}]] matches no lesson in this course");
+                format!("[{slug}]({DEAD_NOTE_DEST})")
+            }
+        };
+        return Some((consumed, replacement));
+    }
+    if let Some(rest) = src.strip_prefix("@here") {
+        let after_ok = rest.chars().next().is_none_or(|ch| {
+            !(ch.is_alphanumeric() || ch == '_')
+        });
+        let before_ok = !prev.is_some_and(|ch| ch.is_alphanumeric() || ch == '_');
+        if !after_ok || !before_ok {
+            return None;
+        }
+        let replacement = match here {
+            Some(h) => {
+                let file = lesson_file(lessons, h.lesson);
+                let anchor = h.anchor.filter(|a| !a.is_empty());
+                let title = h.title.filter(|t| !t.is_empty());
+                match (anchor, title) {
+                    (Some(anchor), Some(title)) => match file {
+                        Some(file) => {
+                            format!("[§ {}]({}#{})", sanitize_link_text(title), file, anchor)
+                        }
+                        None => format!("§ {}", title),
+                    },
+                    (Some(anchor), None) => match file {
+                        Some(file) => format!("[§ {anchor}]({file}#{anchor})"),
+                        None => format!("§ {anchor}"),
+                    },
+                    (None, Some(title)) => format!("§ {}", sanitize_link_text(title)),
+                    (None, None) => "@here".to_string(),
+                }
+            }
+            None => "@here".to_string(),
+        };
+        return Some((5, replacement));
+    }
+    None
+}
+
+/// The set of heading ids `render_markdown` will emit for this body —
+/// the valid anchors for `@here` links.
+pub fn heading_ids(src: &str) -> std::collections::HashSet<String> {
+    let mut ids = std::collections::HashSet::new();
+    let mut buf = String::new();
+    let mut in_heading = false;
+    for event in Parser::new_ext(src, md_options()) {
+        match event {
+            Event::Start(Tag::Heading { .. }) => {
+                in_heading = true;
+                buf.clear();
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                in_heading = false;
+                let id = crate::content::course::slugify(buf.trim());
+                if id != "unnamed" {
+                    ids.insert(id);
+                }
+            }
+            Event::Text(t) | Event::Code(t) if in_heading => buf.push_str(&t),
+            Event::SoftBreak | Event::HardBreak if in_heading => buf.push(' '),
+            _ => {}
+        }
+    }
+    ids
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -865,6 +1046,28 @@ mod tests {
             course,
             source: Path::new("01-a.md"),
             lessons_by_file: by_file,
+            widgets: true,
+        };
+        let mut diags = Vec::new();
+        render_markdown(src, &ctx, &registry, &mut diags)
+            .views
+            .into_iter()
+            .map(|v| crate::render::render_html(move || v))
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn render_note(
+        src: &str,
+        course: &Course,
+        by_file: &std::collections::HashMap<String, String>,
+    ) -> String {
+        let registry = WidgetRegistry::with_builtins();
+        let ctx = MarkdownCtx {
+            course,
+            source: Path::new("01-a.md"),
+            lessons_by_file: by_file,
+            widgets: false,
         };
         let mut diags = Vec::new();
         render_markdown(src, &ctx, &registry, &mut diags)
@@ -995,6 +1198,105 @@ mod tests {
     }
 
     #[test]
+    fn note_links_expand_lesson_slugs() {
+        let lessons = note_lessons();
+        assert_eq!(
+            expand_note_links("See [[b]] for more.", &lessons, None),
+            "See [B](02-b.md) for more."
+        );
+        assert_eq!(
+            expand_note_links("Broken [[zz]] here", &lessons, None),
+            "Broken [zz](notebook-missing.md) here"
+        );
+        assert_eq!(
+            expand_note_links("Nested [[a [[b]]", &lessons, None),
+            "Nested [[a [B](02-b.md)"
+        );
+    }
+
+    #[test]
+    fn note_links_leave_code_untouched() {
+        let lessons = note_lessons();
+        let src = "Use `[[b]]` literally.\n\n```rust\n[[b]] @here\n```\n\nBut [[b]] works.\n";
+        let out = expand_note_links(src, &lessons, None);
+        assert!(out.contains("`[[b]]`"), "inline code preserved: {out}");
+        assert!(out.contains("```rust\n[[b]] @here\n```"), "fence preserved: {out}");
+        assert!(out.contains("[B](02-b.md) works"), "prose expanded: {out}");
+    }
+
+    #[test]
+    fn here_expands_to_anchor_link() {
+        let lessons = note_lessons();
+        let here = NoteHere {
+            lesson: "b",
+            anchor: Some("setup"),
+            title: Some("Set up"),
+        };
+        assert_eq!(
+            expand_note_links("As shown @here.", &lessons, Some(here)),
+            "As shown [§ Set up](02-b.md#setup)."
+        );
+        assert_eq!(expand_note_links("@here", &lessons, None), "@here");
+        assert_eq!(
+            expand_note_links("no@here match", &lessons, Some(here)),
+            "no@here match"
+        );
+        assert_eq!(
+            expand_note_links("@herox", &lessons, Some(here)),
+            "@herox"
+        );
+        let no_anchor = NoteHere {
+            lesson: "b",
+            anchor: None,
+            title: Some("Set up"),
+        };
+        assert_eq!(
+            expand_note_links("see @here", &lessons, Some(no_anchor)),
+            "see § Set up"
+        );
+    }
+
+    #[test]
+    fn heading_ids_match_renderer_slugs() {
+        let ids = heading_ids("# Big Head\n\n## Sub section\n\ntext\n");
+        assert!(ids.contains("big-head"), "got {ids:?}");
+        assert!(ids.contains("sub-section"), "got {ids:?}");
+    }
+
+    #[test]
+    fn plain_mode_renders_widget_tag_as_literal_text() {
+        let (_dir, course, by_file) = fixture_course();
+        let html = render_note(r#"note <Widget type="quiz" id="x.y" /> tail"#, &course, &by_file);
+        assert!(html.contains("&lt;Widget"), "escaped: {html}");
+        assert!(!html.contains("widget-shell"), "no widget rendered: {html}");
+        assert!(html.contains("note"), "{html}");
+        assert!(html.contains("tail"), "{html}");
+    }
+
+    fn note_lessons() -> Vec<Lesson> {
+        vec![
+            Lesson {
+                slug: "a".into(),
+                title: "A".into(),
+                description: None,
+                order: 1.0,
+                file_name: "01-a.md".into(),
+                section: None,
+                body: String::new(),
+            },
+            Lesson {
+                slug: "b".into(),
+                title: "B".into(),
+                description: None,
+                order: 2.0,
+                file_name: "02-b.md".into(),
+                section: None,
+                body: String::new(),
+            },
+        ]
+    }
+
+    #[test]
     fn strips_duplicated_h1() {
         assert_eq!(strip_title_heading("# My Title\n\nBody", "My Title"), "Body");
         assert_eq!(strip_title_heading("# Other\n\nBody", "My Title"), "# Other\n\nBody");
@@ -1009,6 +1311,7 @@ mod tests {
             course: &course,
             source: src,
             lessons_by_file: &by_file,
+            widgets: true,
         };
         let mut empty = Vec::new();
 

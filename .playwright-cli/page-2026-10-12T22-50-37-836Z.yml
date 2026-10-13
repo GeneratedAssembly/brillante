@@ -1,0 +1,233 @@
+- generic [active] [ref=f4e1]:
+  - banner [ref=f4e2]:
+    - generic [ref=f4e3]:
+      - link "Brillante" [ref=f4e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f4e5]:
+        - link "Home" [ref=f4e6] [cursor=pointer]:
+          - /url: /
+        - link "Browse" [ref=f4e7] [cursor=pointer]:
+          - /url: /browse
+        - link "Tutor UI" [ref=f4e8] [cursor=pointer]:
+          - /url: /account
+  - main [ref=f4e9]:
+    - paragraph [ref=f4e10]:
+      - link "Browse" [ref=f4e11] [cursor=pointer]:
+        - /url: /browse
+      - text: /
+      - link "Optics" [ref=f4e12] [cursor=pointer]:
+        - /url: /course/optics
+    - generic [ref=f4e13]:
+      - generic [ref=f4e14]: Before you start, please read this course's references & licensing policy and acknowledge it.
+      - link "Read & acknowledge" [ref=f4e15] [cursor=pointer]:
+        - /url: /course/optics/references
+    - article [ref=f4e16]:
+      - heading "References, Licensing, and Citation Policy" [level=1] [ref=f4e17]
+      - paragraph [ref=f4e18]: Where this course comes from, what licenses apply, and how every lesson credits its sources.
+      - generic [ref=f4e19]:
+        - paragraph [ref=f4e20]: Every lesson in this course was built from two openly licensed sources. This page states exactly what they are, what you may do with the result, and the rules every lesson follows when quoting or borrowing from them.
+        - heading "The two sources" [level=2] [ref=f4e21]
+        - blockquote [ref=f4e22]:
+          - paragraph [ref=f4e23]:
+            - strong [ref=f4e24]: Barbastathis, George, Colin Sheppard, and Se Baek Oh.
+            - emphasis [ref=f4e25]: 2.71 Optics
+            - text: ". Spring 2009. Massachusetts Institute of Technology: MIT OpenCourseWare,"
+            - link "https://ocw.mit.edu/courses/2-71-optics-spring-2009/" [ref=f4e26] [cursor=pointer]:
+              - /url: https://ocw.mit.edu/courses/2-71-optics-spring-2009/
+            - text: ". License: Creative Commons BY-NC-SA."
+        - blockquote [ref=f4e27]:
+          - paragraph [ref=f4e28]:
+            - strong [ref=f4e29]: Ling, Samuel J., Jeff Sanny, and William Moebs.
+            - emphasis [ref=f4e30]: University Physics Volume 3
+            - text: . OpenStax,
+            - link "https://openstax.org/details/books/university-physics-volume-3" [ref=f4e31] [cursor=pointer]:
+              - /url: https://openstax.org/details/books/university-physics-volume-3
+            - text: . Freely accessed through LibreTexts,
+            - link "https://phys.libretexts.org/Bookshelves/University_Physics/University_Physics_(OpenStax)/University_Physics_III_-_Optics_and_Modern_Physics_(OpenStax)" [ref=f4e32] [cursor=pointer]:
+              - /url: https://phys.libretexts.org/Bookshelves/University_Physics/University_Physics_(OpenStax)/University_Physics_III_-_Optics_and_Modern_Physics_(OpenStax)
+            - text: ". License: Creative Commons BY 4.0."
+        - paragraph [ref=f4e33]:
+          - text: "MIT OCW 2.71/2.710 supplies the structure, the derivations, and the working engineer's perspective: 26 sessions moving from ray tracing through aberrations, wave optics, interferometry, and diffraction, up to imaging systems and resolution. OpenStax"
+          - emphasis [ref=f4e34]: University Physics III
+          - text: (chapters 1–4 only) supplies the introductory-physics treatment of the same phenomena — the nature of light, geometric optics, interference, and diffraction — which we use where a gentler first pass helps.
+        - heading "Licenses" [level=2] [ref=f4e35]
+        - table [ref=f4e37]:
+          - rowgroup [ref=f4e38]:
+            - row [ref=f4e39]:
+              - columnheader "Source" [ref=f4e40]
+              - columnheader "License" [ref=f4e41]
+              - columnheader "Effect on this course" [ref=f4e42]
+          - rowgroup [ref=f4e43]:
+            - row [ref=f4e44]:
+              - cell "MIT OCW 2.71 (Spring 2009)" [ref=f4e45]
+              - cell [ref=f4e46]:
+                - link "CC BY-NC-SA 4.0" [ref=f4e47] [cursor=pointer]:
+                  - /url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+              - cell [ref=f4e48]:
+                - text: Attribution required;
+                - strong [ref=f4e49]: non-commercial
+                - text: ;
+                - strong [ref=f4e50]: share-alike
+            - row [ref=f4e51]:
+              - cell "OpenStax UP III" [ref=f4e52]
+              - cell [ref=f4e53]:
+                - link "CC BY 4.0" [ref=f4e54] [cursor=pointer]:
+                  - /url: https://creativecommons.org/licenses/by/4.0/
+              - cell "Attribution required" [ref=f4e55]
+        - paragraph [ref=f4e56]:
+          - text: These two licenses are compatible, but not symmetrically. Because MIT's terms are stricter, the
+          - strong [ref=f4e57]: course as a whole is released under CC BY-NC-SA 4.0
+          - text: ": you must give credit, you may not use it commercially, and any adaptation that redistributes its content must carry the same license. Where a passage draws"
+          - emphasis [ref=f4e58]: only
+          - text: on OpenStax material, that passage may be reused under CC BY 4.0 alone. Per-figure and per-quote captions state which license governs that item.
+        - generic [ref=f4e59]:
+          - generic [ref=f4e60]: This course mixes MIT OCW content (CC BY-NC-SA 4.0) with OpenStax content (CC BY 4.0). Which license must the course as a whole carry?
+          - generic [ref=f4e61]:
+            - button "A CC BY-NC-SA 4.0 — the stricter terms govern any combination" [ref=f4e62] [cursor=pointer]:
+              - generic [ref=f4e63]: A
+              - generic [ref=f4e64]: CC BY-NC-SA 4.0 — the stricter terms govern any combination
+            - button "B CC BY 4.0 — the more permissive license wins" [ref=f4e65] [cursor=pointer]:
+              - generic [ref=f4e66]: B
+              - generic [ref=f4e67]: CC BY 4.0 — the more permissive license wins
+            - button "C No license is needed, since both sources are openly licensed" [ref=f4e68] [cursor=pointer]:
+              - generic [ref=f4e69]: C
+              - generic [ref=f4e70]: No license is needed, since both sources are openly licensed
+            - button "D Public domain, because educational material is free by default" [ref=f4e71] [cursor=pointer]:
+              - generic [ref=f4e72]: D
+              - generic [ref=f4e73]: Public domain, because educational material is free by default
+        - heading "Citation policy" [level=2] [ref=f4e74]
+        - paragraph [ref=f4e75]: "Every lesson follows these rules, and this page is the contract:"
+        - list [ref=f4e76]:
+          - listitem [ref=f4e77]:
+            - paragraph [ref=f4e78]:
+              - strong [ref=f4e79]: Paraphrase by default.
+              - text: Lesson text is our own wording.
+          - listitem [ref=f4e80]:
+            - paragraph [ref=f4e81]:
+              - strong [ref=f4e82]: Verbatim excerpts
+              - text: appear only inside blockquotes with an explicit citation line and URL, as done for the two sources above.
+          - listitem [ref=f4e83]:
+            - paragraph [ref=f4e84]:
+              - strong [ref=f4e85]: Borrowed figures
+              - text: live in the course
+              - code [ref=f4e86]: images/
+              - text: directory with a caption ending in the source, license, and URL — e.g.
+              - code [ref=f4e87]: "(Source: MIT OCW 2.71 Optics, Spring 2009, lecture 15, CC BY-NC-SA 4.0 — https://ocw.mit.edu/courses/2-71-optics-spring-2009/)"
+              - text: — or the OpenStax equivalent under CC BY 4.0.
+          - listitem [ref=f4e88]:
+            - paragraph [ref=f4e89]:
+              - strong [ref=f4e90]: Downloadables always link out.
+              - text: Lecture videos, notes PDFs, problem sets, and exams are never re-hosted here; they appear as link cards so traffic and credit flow to MIT. The same goes for the OpenStax/LibreTexts book.
+          - listitem [ref=f4e91]:
+            - paragraph [ref=f4e92]:
+              - strong [ref=f4e93]: Every lesson ends with a Sources footer
+              - text: listing what it drew on — MIT lecture numbers and OpenStax sections — with links to the canonical pages.
+        - generic [ref=f4e94]:
+          - generic [ref=f4e95]: May this course re-host MIT's lecture videos and problem-set PDFs on its own server?
+          - generic [ref=f4e96]:
+            - button "A Yes, as long as MIT is credited" [ref=f4e97] [cursor=pointer]:
+              - generic [ref=f4e98]: A
+              - generic [ref=f4e99]: Yes, as long as MIT is credited
+            - button "B No — link to the canonical OCW pages instead" [ref=f4e100] [cursor=pointer]:
+              - generic [ref=f4e101]: B
+              - generic [ref=f4e102]: No — link to the canonical OCW pages instead
+            - button "C Yes, but only inside paid enrollment" [ref=f4e103] [cursor=pointer]:
+              - generic [ref=f4e104]: C
+              - generic [ref=f4e105]: Yes, but only inside paid enrollment
+            - button "D Only the PDFs, not the videos" [ref=f4e106] [cursor=pointer]:
+              - generic [ref=f4e107]: D
+              - generic [ref=f4e108]: Only the PDFs, not the videos
+        - paragraph [ref=f4e109]: Before continuing, please confirm that you have read and accepted this policy. The notice shown on the course outline and on each lesson until you do so is advisory only — this platform keeps no accounts and stores your choice in your own browser.
+        - generic [ref=f4e111]:
+          - paragraph [ref=f4e112]: You have read this course's references, licensing, and citation policy. You understand the course is derived from MIT OCW 2.71 (CC BY-NC-SA 4.0) and OpenStax University Physics III (CC BY 4.0), that sources are cited in every lesson, and that downloadable materials are linked, not re-hosted.
+          - generic [ref=f4e113] [cursor=pointer]:
+            - checkbox "I have read this." [ref=f4e114]
+            - generic [ref=f4e115]: I have read this.
+          - button "I acknowledge the policy" [disabled] [ref=f4e116]
+        - heading "Further material" [level=2] [ref=f4e117]
+        - paragraph [ref=f4e118]: These are the canonical entry points for both sources. If a lesson references a specific lecture video, problem set, or exam, its Sources footer links the exact page.
+        - link "MIT 2.71 — Video Lectures The full lecture-video gallery for the Spring 2009 course. MIT OpenCourseWare · Video" [ref=f4e120] [cursor=pointer]:
+          - /url: https://ocw.mit.edu/courses/2-71-optics-spring-2009/video_galleries/video-lectures/
+          - generic [aria-hidden] [ref=f4e121]: ▶
+          - generic [ref=f4e122]:
+            - generic [ref=f4e123]: MIT 2.71 — Video Lectures
+            - generic [ref=f4e124]: The full lecture-video gallery for the Spring 2009 course.
+            - generic [ref=f4e125]: MIT OpenCourseWare · Video
+        - link "MIT 2.71 — Assignments Problem sets with solutions. MIT OpenCourseWare · Assignment" [ref=f4e127] [cursor=pointer]:
+          - /url: https://ocw.mit.edu/courses/2-71-optics-spring-2009/pages/assignments/
+          - generic [aria-hidden] [ref=f4e128]: ✎
+          - generic [ref=f4e129]:
+            - generic [ref=f4e130]: MIT 2.71 — Assignments
+            - generic [ref=f4e131]: Problem sets with solutions.
+            - generic [ref=f4e132]: MIT OpenCourseWare · Assignment
+        - link "MIT 2.71 — Exams Quizzes and final exam with solutions. MIT OpenCourseWare · Exam" [ref=f4e134] [cursor=pointer]:
+          - /url: https://ocw.mit.edu/courses/2-71-optics-spring-2009/pages/exams/
+          - generic [aria-hidden] [ref=f4e135]: ✓
+          - generic [ref=f4e136]:
+            - generic [ref=f4e137]: MIT 2.71 — Exams
+            - generic [ref=f4e138]: Quizzes and final exam with solutions.
+            - generic [ref=f4e139]: MIT OpenCourseWare · Exam
+        - link "MIT 2.71 — Calendar The original 26-session syllabus with Hecht and Goodman readings. MIT OpenCourseWare · Resource" [ref=f4e141] [cursor=pointer]:
+          - /url: https://ocw.mit.edu/courses/2-71-optics-spring-2009/pages/calendar/
+          - generic [aria-hidden] [ref=f4e142]: ↗
+          - generic [ref=f4e143]:
+            - generic [ref=f4e144]: MIT 2.71 — Calendar
+            - generic [ref=f4e145]: The original 26-session syllabus with Hecht and Goodman readings.
+            - generic [ref=f4e146]: MIT OpenCourseWare · Resource
+        - link "OpenStax — University Physics Volume 3 The book's home page at OpenStax (CC BY 4.0). OpenStax · Resource" [ref=f4e148] [cursor=pointer]:
+          - /url: https://openstax.org/details/books/university-physics-volume-3
+          - generic [aria-hidden] [ref=f4e149]: ↗
+          - generic [ref=f4e150]:
+            - generic [ref=f4e151]: OpenStax — University Physics Volume 3
+            - generic [ref=f4e152]: The book's home page at OpenStax (CC BY 4.0).
+            - generic [ref=f4e153]: OpenStax · Resource
+        - link "LibreTexts — University Physics III (OpenStax) The LibreTexts edition used while writing this course, including the full PDF. LibreTexts · PDF" [ref=f4e155] [cursor=pointer]:
+          - /url: https://phys.libretexts.org/Bookshelves/University_Physics/University_Physics_(OpenStax)/University_Physics_III_-_Optics_and_Modern_Physics_(OpenStax)
+          - generic [aria-hidden] [ref=f4e156]: 📄
+          - generic [ref=f4e157]:
+            - generic [ref=f4e158]: LibreTexts — University Physics III (OpenStax)
+            - generic [ref=f4e159]: The LibreTexts edition used while writing this course, including the full PDF.
+            - generic [ref=f4e160]: LibreTexts · PDF
+        - heading "Sources" [level=2] [ref=f4e161]
+        - list [ref=f4e162]:
+          - listitem [ref=f4e163]:
+            - paragraph [ref=f4e164]:
+              - text: "MIT OCW 2.71 Optics, Spring 2009 — course home, calendar, and license:"
+              - link "https://ocw.mit.edu/courses/2-71-optics-spring-2009/" [ref=f4e165] [cursor=pointer]:
+                - /url: https://ocw.mit.edu/courses/2-71-optics-spring-2009/
+              - text: (CC BY-NC-SA 4.0)
+          - listitem [ref=f4e166]:
+            - paragraph [ref=f4e167]:
+              - text: OpenStax
+              - emphasis [ref=f4e168]: University Physics Volume 3
+              - text: ":"
+              - link "https://openstax.org/details/books/university-physics-volume-3" [ref=f4e169] [cursor=pointer]:
+                - /url: https://openstax.org/details/books/university-physics-volume-3
+              - text: (CC BY 4.0)
+          - listitem [ref=f4e170]:
+            - paragraph [ref=f4e171]:
+              - text: "LibreTexts edition of the same book (PDF download source):"
+              - link "https://phys.libretexts.org/Bookshelves/University_Physics/University_Physics_(OpenStax)/University_Physics_III_-_Optics_and_Modern_Physics_(OpenStax)" [ref=f4e172] [cursor=pointer]:
+                - /url: https://phys.libretexts.org/Bookshelves/University_Physics/University_Physics_(OpenStax)/University_Physics_III_-_Optics_and_Modern_Physics_(OpenStax)
+      - button "Mark complete" [ref=f4e174] [cursor=pointer]
+      - navigation [ref=f4e175]:
+        - link "Next A Brief History of Optics" [ref=f4e176] [cursor=pointer]:
+          - /url: /course/optics/a-brief-history-of-optics
+          - generic [ref=f4e177]: Next
+          - generic [ref=f4e178]: A Brief History of Optics
+    - complementary "Lesson notes" [ref=f4e179]:
+      - generic [ref=f4e180]:
+        - generic [ref=f4e181]: Note
+        - link "All notes" [ref=f4e182] [cursor=pointer]:
+          - /url: /notes/optics
+        - button "Close" [ref=f4e183] [cursor=pointer]
+      - generic [ref=f4e184]:
+        - textbox "Write a note. @ links sections, [[ links lessons." [ref=f4e185]
+        - generic [ref=f4e186]:
+          - button "Preview" [ref=f4e187] [cursor=pointer]
+          - button "Save" [ref=f4e188] [cursor=pointer]
+    - button "Note" [ref=f4e189] [cursor=pointer]
+    - button "Tutor" [ref=f4e190] [cursor=pointer]
+  - contentinfo [ref=f4e191]:
+    - paragraph [ref=f4e192]: Powered by Brillante — markdown courses with interactive widgets.
+  - button "Scratch pad" [ref=f4e193] [cursor=pointer]

@@ -1,0 +1,35 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - link "Brillante" [ref=f2e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f2e5]:
+        - link "Home" [ref=f2e6] [cursor=pointer]:
+          - /url: /
+        - link "Browse" [ref=f2e7] [cursor=pointer]:
+          - /url: /browse
+        - link "Account" [ref=f2e8] [cursor=pointer]:
+          - /url: /account
+  - main [ref=f2e9]:
+    - generic [ref=f2e10]:
+      - heading "Browse courses" [level=1] [ref=f2e11]
+      - paragraph [ref=f2e12]: Every course available on this server.
+      - search [ref=f2e13]:
+        - searchbox "Search courses" [ref=f2e14]: widget
+        - button "Search" [ref=f2e15] [cursor=pointer]
+    - generic [ref=f2e16]:
+      - paragraph [ref=f2e17]: 1 course(s) match — “widget”
+      - 'link "Getting Started with Brillante A short tour of Brillante: markdown lessons, interactive widgets, and how raw HTML gets kept out of your pages. 4 lessons" [ref=f2e20] [cursor=pointer]':
+        - /url: /course/getting-started
+        - heading "Getting Started with Brillante" [level=3] [ref=f2e21]
+        - paragraph [ref=f2e22]: "A short tour of Brillante: markdown lessons, interactive widgets, and how raw HTML gets kept out of your pages."
+        - generic [ref=f2e23]: 4 lessons
+      - generic [ref=f2e25]:
+        - heading "Lessons" [level=2] [ref=f2e26]
+        - list [ref=f2e27]:
+          - listitem [ref=f2e28]:
+            - link "Interactive widgets" [ref=f2e29] [cursor=pointer]:
+              - /url: /course/getting-started/widgets
+            - generic [ref=f2e30]: Getting Started with Brillante
+  - contentinfo [ref=f2e31]:
+    - paragraph [ref=f2e32]: Powered by Brillante — markdown courses with interactive widgets.

@@ -1,0 +1,33 @@
+- generic [active] [ref=f5e1]:
+  - banner [ref=f5e2]:
+    - generic [ref=f5e3]:
+      - link "Brillante" [ref=f5e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f5e5]:
+        - link "Home" [ref=f5e6] [cursor=pointer]:
+          - /url: /
+        - link "Browse" [ref=f5e7] [cursor=pointer]:
+          - /url: /browse
+        - link "UI Flow" [ref=f5e8] [cursor=pointer]:
+          - /url: /account
+  - main [ref=f5e9]:
+    - generic [ref=f5e10]:
+      - heading "Notes — Getting Started with Brillante" [level=1] [ref=f5e11]
+      - paragraph [ref=f5e12]:
+        - text: Your notebook for
+        - link "the course outline" [ref=f5e13] [cursor=pointer]:
+          - /url: /course/getting-started
+        - text: .
+    - generic [ref=f5e15]:
+      - heading [level=2] [ref=f5e16]:
+        - link "Welcome to Brillante" [ref=f5e17] [cursor=pointer]:
+          - /url: /course/getting-started/welcome
+      - paragraph [ref=f5e19]:
+        - text: See
+        - link "Interactive widgets" [ref=f5e20] [cursor=pointer]:
+          - /url: /course/getting-started/widgets
+        - text: in
+        - link "§ Code fences keep their language" [ref=f5e21] [cursor=pointer]:
+          - /url: /course/getting-started/welcome#code-fences-keep-their-language
+  - contentinfo [ref=f5e22]:
+    - paragraph [ref=f5e23]: Powered by Brillante — markdown courses with interactive widgets.

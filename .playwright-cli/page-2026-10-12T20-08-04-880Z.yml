@@ -1,0 +1,108 @@
+- generic [active] [ref=f11e1]:
+  - banner [ref=f11e2]:
+    - generic [ref=f11e3]:
+      - link "Brillante" [ref=f11e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f11e5]:
+        - link "Home" [ref=f11e6] [cursor=pointer]:
+          - /url: /
+        - link "Browse" [ref=f11e7] [cursor=pointer]:
+          - /url: /browse
+        - link "Tutor Admin" [ref=f11e8] [cursor=pointer]:
+          - /url: /account
+        - link "Admin" [ref=f11e9] [cursor=pointer]:
+          - /url: /admin/courses
+  - main [ref=f11e10]:
+    - paragraph [ref=f11e11]:
+      - link "Browse" [ref=f11e12] [cursor=pointer]:
+        - /url: /browse
+      - text: /
+      - link "Getting Started with Brillante" [ref=f11e13] [cursor=pointer]:
+        - /url: /course/getting-started
+    - article [ref=f11e14]:
+      - heading "Welcome to Brillante" [level=1] [ref=f11e15]
+      - paragraph [ref=f11e16]: What this platform is, how lessons are written, and what happens to the HTML you were about to paste.
+      - generic [ref=f11e17]:
+        - paragraph [ref=f11e18]:
+          - text: Welcome! Brillante serves
+          - strong [ref=f11e19]: courses
+          - text: from registered directories of markdown files. Each
+          - code [ref=f11e20]: .md
+          - text: file in a registered directory is a
+          - emphasis [ref=f11e21]: lesson
+          - text: ", and each lesson starts with frontmatter that tells the server how to present it."
+        - code [ref=f11e23]: "--- title: My lesson description: One line shown in the course outline. order: 1 ---"
+        - heading "What you can write" [level=2] [ref=f11e24]
+        - paragraph [ref=f11e25]: "Standard markdown works the way you expect:"
+        - list [ref=f11e26]:
+          - listitem [ref=f11e27]:
+            - paragraph [ref=f11e28]:
+              - strong [ref=f11e29]: bold
+              - text: ","
+              - emphasis [ref=f11e30]: italics
+              - text: ","
+              - code [ref=f11e31]: inline code
+              - text: ", and strikethrough"
+          - listitem [ref=f11e32]:
+            - paragraph [ref=f11e33]:
+              - text: lists, numbered lists, and
+              - link "links to other lessons" [ref=f11e34] [cursor=pointer]:
+                - /url: /course/getting-started/widgets
+          - listitem [ref=f11e35]:
+            - paragraph [ref=f11e36]: "tables:"
+        - table [ref=f11e38]:
+          - rowgroup [ref=f11e39]:
+            - row [ref=f11e40]:
+              - columnheader "Feature" [ref=f11e41]
+              - columnheader "Where it lives" [ref=f11e42]
+          - rowgroup [ref=f11e43]:
+            - row [ref=f11e44]:
+              - cell "Lesson metadata" [ref=f11e45]
+              - cell "frontmatter" [ref=f11e46]
+            - row [ref=f11e47]:
+              - cell "Widget config" [ref=f11e48]
+              - cell [ref=f11e49]:
+                - code [ref=f11e50]: config.toml
+            - row [ref=f11e51]:
+              - cell "Course metadata" [ref=f11e52]
+              - cell [ref=f11e53]:
+                - code [ref=f11e54]: course.toml
+        - blockquote [ref=f11e55]:
+          - paragraph [ref=f11e56]: Quoted material renders as a blockquote. Everything you see here is plain markdown — no HTML anywhere in the source.
+        - heading "Code fences keep their language" [level=3] [ref=f11e57]
+        - code [ref=f11e59]: "fn main() { println!(\"lessons are just files\"); }"
+        - heading "What happens to raw HTML?" [level=2] [ref=f11e60]
+        - paragraph [ref=f11e61]:
+          - text: Nothing. Brillante renders markdown
+          - strong [ref=f11e62]: only
+          - text: — the single exception is the special
+          - code [ref=f11e63]: <Widget />
+          - text: tag, which the server resolves through its widget registry.
+        - paragraph [ref=f11e64]:
+          - text: To prove the point, the source of this paragraph contains
+          - code [ref=f11e65]: <script>alert('never rendered')</script>
+          - text: and
+          - code [ref=f11e66]: <b>bold via HTML</b>
+          - text: . You will see neither a script tag nor a bold HTML tag below — both were silently dropped by the renderer, because no author-supplied HTML is ever emitted.
+      - button "Mark complete" [ref=f11e68] [cursor=pointer]
+      - navigation [ref=f11e69]:
+        - link "Next Interactive widgets" [ref=f11e70] [cursor=pointer]:
+          - /url: /course/getting-started/widgets
+          - generic [ref=f11e71]: Next
+          - generic [ref=f11e72]: Interactive widgets
+    - complementary "Lesson notes" [ref=f11e73]:
+      - generic [ref=f11e74]:
+        - generic [ref=f11e75]: Note
+        - link "All notes" [ref=f11e76] [cursor=pointer]:
+          - /url: /notes/getting-started
+        - button "Close" [ref=f11e77] [cursor=pointer]
+      - generic [ref=f11e78]:
+        - textbox "Write a note. @ links sections, [[ links lessons." [ref=f11e79]
+        - generic [ref=f11e80]:
+          - button "Preview" [ref=f11e81] [cursor=pointer]
+          - button "Save" [ref=f11e82] [cursor=pointer]
+    - button "Note" [ref=f11e83] [cursor=pointer]
+    - button "Tutor" [ref=f11e84] [cursor=pointer]
+  - contentinfo [ref=f11e85]:
+    - paragraph [ref=f11e86]: Powered by Brillante — markdown courses with interactive widgets.
+  - button "Scratch pad" [ref=f11e87] [cursor=pointer]

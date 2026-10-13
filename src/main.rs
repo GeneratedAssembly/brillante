@@ -111,6 +111,7 @@ fn main() {
         std::process::exit(1);
     }
 
+    app::load_bootstrap_env();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -120,6 +121,7 @@ fn main() {
 
 async fn serve(config: AppConfig) {
     let router = app::router(&config);
+    app::spawn_admin_bootstrap(&config);
     let addr = format!("{}:{}", config.host, config.port);
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -131,6 +133,10 @@ async fn serve(config: AppConfig) {
     tracing::info!("brillante serving on http://{addr}");
     for course in &config.courses {
         tracing::info!("course directory: {}", course.display());
+    }
+    match &config.pocketbase {
+        Some(pb) => tracing::info!("pocketbase auth: {} (accounts at /account)", pb.url),
+        None => tracing::info!("pocketbase auth: disabled (no [pocketbase] section)"),
     }
     tracing::info!("reload content: POST /admin/reload · diagnostics: GET /admin/diagnostics");
     axum::serve(listener, router)

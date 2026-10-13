@@ -50,21 +50,57 @@
     save(data);
   }
 
+  function serverAuth() {
+    return document.body.dataset.auth === 'server';
+  }
+
+  function paintButton(btn, done) {
+    btn.classList.toggle('done', done);
+    btn.textContent = done ? 'Completed' : 'Mark complete';
+  }
+
+  function postProgress(course, lesson, done, cb) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/progress', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      cb(xhr.status >= 200 && xhr.status < 300, xhr.status);
+    };
+    xhr.send(JSON.stringify({ course: course, lesson: lesson, done: done }));
+  }
+
   function initLesson() {
     var btn = document.getElementById('mark-complete');
     if (!btn) return;
     var course = btn.dataset.course;
     var lesson = btn.dataset.lesson;
-    function paint(done) {
-      btn.classList.toggle('done', done);
-      btn.textContent = done ? 'Completed' : 'Mark complete';
+    var server = serverAuth();
+    var pending = false;
+    function currentDone() {
+      return server ? btn.classList.contains('done') : isDone(load(), course, lesson);
     }
-    paint(isDone(load(), course, lesson));
+    paintButton(btn, currentDone());
     btn.addEventListener('click', function () {
-      var data = load();
-      var done = !isDone(data, course, lesson);
-      setDone(data, course, lesson, done);
-      paint(done);
+      if (pending) return;
+      var done = !currentDone();
+      if (server) {
+        pending = true;
+        btn.disabled = true;
+        postProgress(course, lesson, done, function (ok, status) {
+          pending = false;
+          btn.disabled = false;
+          if (ok) {
+            paintButton(btn, done);
+          } else if (status === 401) {
+            window.location.href = '/account?next=' + encodeURIComponent(window.location.pathname);
+          }
+        });
+      } else {
+        var data = load();
+        setDone(data, course, lesson, done);
+        paintButton(btn, done);
+      }
     });
   }
 
@@ -73,6 +109,7 @@
     if (!items.length) return;
     var course = document.body.dataset.course;
     if (!course) return;
+    if (serverAuth()) return; // server rendered the completed state
     var data = load();
     var done = 0;
     items.forEach(function (li) {
@@ -93,7 +130,7 @@
       if (Array.isArray(parsed)) ids = parsed;
     } catch (e) { ids = []; }
     if (!ids.length) return;
-function acknowledged() {
+    function acknowledged() {
       var data = loadAcks();
       for (var i = 0; i < ids.length; i++) {
         if (data[ids[i]]) return true;
@@ -110,10 +147,28 @@ function acknowledged() {
     });
   }
 
+  function initAccount() {
+    var link = document.getElementById('account-link');
+    if (!link || !serverAuth()) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/auth/me', true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4 || xhr.status !== 200) return;
+      var me;
+      try { me = JSON.parse(xhr.responseText); } catch (e) { return; }
+      if (me && me.authenticated && me.name) {
+        link.textContent = me.name;
+        link.title = 'Signed in as ' + me.name;
+      }
+    };
+    xhr.send();
+  }
+
   function init() {
     initLesson();
     initCourse();
     initAckBanner();
+    initAccount();
   }
 
   if (document.readyState === 'loading') {
