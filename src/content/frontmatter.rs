@@ -1,5 +1,5 @@
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::path::Path;
 
 use crate::diag::Diagnostic;
@@ -90,8 +90,7 @@ pub fn split(src: &str) -> Result<Split, String> {
         return Ok(Split::Without(trimmed_start.to_string()));
     };
 
-    let rest = trimmed_start.split_once('\n').map(|x| x.1)
-        .unwrap_or("");
+    let rest = trimmed_start.split_once('\n').map(|x| x.1).unwrap_or("");
     let mut closing = None;
     let mut body_start = 0usize;
     let mut offset = 0usize;
@@ -104,24 +103,22 @@ pub fn split(src: &str) -> Result<Split, String> {
         }
         offset += line.len();
     }
-    let closing = closing.ok_or_else(|| {
-        format!("frontmatter opened with '{delim}' but never closed")
-    })?;
+    let closing =
+        closing.ok_or_else(|| format!("frontmatter opened with '{delim}' but never closed"))?;
 
     let text = rest[..closing].trim().to_string();
     let body = rest[body_start..].to_string();
     Ok(Split::With { format, text, body })
 }
 
-pub fn parse<T: DeserializeOwned>(
-    format: FrontmatterFormat,
-    text: &str,
-) -> Result<T, String> {
+pub fn parse<T: DeserializeOwned>(format: FrontmatterFormat, text: &str) -> Result<T, String> {
     match format {
-        FrontmatterFormat::Yaml => serde_yaml::from_str(text)
-            .map_err(|e| format!("invalid YAML frontmatter: {e}")),
-        FrontmatterFormat::Toml => toml::from_str(text)
-            .map_err(|e| format!("invalid TOML frontmatter: {e}")),
+        FrontmatterFormat::Yaml => {
+            serde_yaml::from_str(text).map_err(|e| format!("invalid YAML frontmatter: {e}"))
+        }
+        FrontmatterFormat::Toml => {
+            toml::from_str(text).map_err(|e| format!("invalid TOML frontmatter: {e}"))
+        }
     }
 }
 
@@ -223,7 +220,8 @@ mod tests {
 
     #[test]
     fn parses_section_key() {
-        let fm: LessonFrontmatter = parse(FrontmatterFormat::Yaml, "title: X\nsection: rays").unwrap();
+        let fm: LessonFrontmatter =
+            parse(FrontmatterFormat::Yaml, "title: X\nsection: rays").unwrap();
         assert_eq!(fm.section.as_deref(), Some("rays"));
         let meta: CourseMeta = parse(
             FrontmatterFormat::Toml,

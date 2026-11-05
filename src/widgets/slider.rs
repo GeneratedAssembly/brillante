@@ -4,7 +4,7 @@ use leptos::prelude::*;
 
 use crate::widgets::expr;
 use crate::widgets::template;
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
 fn decimals_of(step: f64) -> usize {
     let s = format!("{step}");
@@ -81,10 +81,12 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
                 other => {
                     return Err(WidgetError::Invalid(format!(
                         "'display' placeholder '{{{other}}}' must be '{{value}}' or '{{result}}'"
-                    )))
+                    )));
                 }
             }
-            if let Some(spec) = ph.spec && template::spec_decimals(spec).is_none() {
+            if let Some(spec) = ph.spec
+                && template::spec_decimals(spec).is_none()
+            {
                 return Err(WidgetError::Invalid(format!(
                     "'display' format spec '{spec}' in placeholder {shown} has no usable precision; write e.g. '{{value:0.2f}}'"
                 )));
@@ -114,7 +116,13 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
         env.insert("x".to_string(), initial);
         expr::eval_ast(a, &env)
     });
-    let value_text = display_text(display.as_deref(), initial, decimals_of(step), unit.as_deref(), result);
+    let value_text = display_text(
+        display.as_deref(),
+        initial,
+        decimals_of(step),
+        unit.as_deref(),
+        result,
+    );
 
     let mut client_config = w.cfg()?.clone();
     if let Some(a) = &ast
@@ -188,7 +196,13 @@ mod tests {
     #[test]
     fn display_templates_support_precision_specs() {
         assert_eq!(
-            display_text(Some("sensitivity ∝ {value:.2} × (B/(B+1)²)"), 0.5, 1, None, None),
+            display_text(
+                Some("sensitivity ∝ {value:.2} × (B/(B+1)²)"),
+                0.5,
+                1,
+                None,
+                None
+            ),
             "sensitivity ∝ 0.50 × (B/(B+1)²)"
         );
     }
@@ -206,7 +220,13 @@ mod tests {
             "450 nm — 4.4× the scattering of 650 nm red"
         );
         assert_eq!(
-            display_text(Some("x = {value}, f(x) = {result}"), 3.0, 0, None, Some(f64::NAN)),
+            display_text(
+                Some("x = {value}, f(x) = {result}"),
+                3.0,
+                0,
+                None,
+                Some(f64::NAN)
+            ),
             "x = 3, f(x) = —"
         );
     }

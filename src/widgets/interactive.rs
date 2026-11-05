@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
 use leptos::prelude::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::widgets::expr;
 use crate::widgets::template;
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
 fn parse_domain(w: &WidgetInstance, key: &str) -> Result<(f64, f64), WidgetError> {
     let arr = w.req_arr(key)?;
@@ -59,9 +59,7 @@ fn parse_params(w: &WidgetInstance) -> Result<Vec<Param>, WidgetError> {
         let name = obj
             .get("name")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                WidgetError::Invalid(format!("parameters[{i}].name must be a string"))
-            })?
+            .ok_or_else(|| WidgetError::Invalid(format!("parameters[{i}].name must be a string")))?
             .to_string();
         let label = obj
             .get("label")
@@ -69,11 +67,9 @@ fn parse_params(w: &WidgetInstance) -> Result<Vec<Param>, WidgetError> {
             .map(|s| s.to_string())
             .unwrap_or_else(|| name.clone());
         let val = |key: &str| -> Result<f64, WidgetError> {
-            obj.get(key)
-                .and_then(|v| v.as_f64())
-                .ok_or_else(|| {
-                    WidgetError::Invalid(format!("parameters[{i}].{key} must be a number"))
-                })
+            obj.get(key).and_then(|v| v.as_f64()).ok_or_else(|| {
+                WidgetError::Invalid(format!("parameters[{i}].{key} must be a number"))
+            })
         };
         let min = val("min")?;
         let max = val("max")?;
@@ -84,21 +80,15 @@ fn parse_params(w: &WidgetInstance) -> Result<Vec<Param>, WidgetError> {
         }
         let step = clean_step(match obj.get("step") {
             None | Some(Value::Null) => (max - min) / 100.0,
-            Some(v) => v
-                .as_f64()
-                .filter(|s| *s > 0.0)
-                .ok_or_else(|| {
-                    WidgetError::Invalid(format!("parameters[{i}].step must be positive"))
-                })?,
+            Some(v) => v.as_f64().filter(|s| *s > 0.0).ok_or_else(|| {
+                WidgetError::Invalid(format!("parameters[{i}].step must be positive"))
+            })?,
         });
         let initial = match obj.get("initial") {
             None | Some(Value::Null) => min + (max - min) / 2.0,
-            Some(v) => v
-                .as_f64()
-                .map(|x| x.clamp(min, max))
-                .ok_or_else(|| {
-                    WidgetError::Invalid(format!("parameters[{i}].initial must be a number"))
-                })?,
+            Some(v) => v.as_f64().map(|x| x.clamp(min, max)).ok_or_else(|| {
+                WidgetError::Invalid(format!("parameters[{i}].initial must be a number"))
+            })?,
         };
         params.push(Param {
             name,
@@ -122,11 +112,7 @@ fn readout_references_xy(template_text: &str) -> bool {
 /// Initial readout text: placeholders resolved against the environment of
 /// parameter initials plus the probe point `x`; `y` is the expression value
 /// there. Mirrors `formatReadout` in interactive.js.
-fn initial_readout(
-    template_text: &str,
-    ast: &Value,
-    env: &BTreeMap<String, f64>,
-) -> String {
+fn initial_readout(template_text: &str, ast: &Value, env: &BTreeMap<String, f64>) -> String {
     template::render(template_text, &mut |name, dec| {
         let v = if name == "y" {
             expr::eval_ast(ast, env)
@@ -170,7 +156,9 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
                     "'readout' placeholder {shown} is not plottable; allowed: x, y, or a parameter name"
                 )));
             }
-            if let Some(spec) = ph.spec && template::spec_decimals(spec).is_none() {
+            if let Some(spec) = ph.spec
+                && template::spec_decimals(spec).is_none()
+            {
                 return Err(WidgetError::Invalid(format!(
                     "'readout' format spec '{spec}' in placeholder {shown} has no usable precision; write e.g. '{{x:0.2f}}'"
                 )));
@@ -183,7 +171,11 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
     let xslider = match w.cfg()?.get("xslider") {
         None | Some(Value::Null) => readout.as_deref().is_some_and(readout_references_xy),
         Some(Value::Bool(b)) => *b,
-        Some(_) => return Err(WidgetError::Invalid("'xslider' must be true or false".into())),
+        Some(_) => {
+            return Err(WidgetError::Invalid(
+                "'xslider' must be true or false".into(),
+            ));
+        }
     };
     let xparam = xslider.then(|| {
         let step = clean_step((xmax - xmin) / 100.0);
@@ -202,10 +194,8 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
         .as_ref()
         .map(|p| p.initial)
         .unwrap_or_else(|| xmin + (xmax - xmin) / 2.0);
-    let mut env: BTreeMap<String, f64> = params
-        .iter()
-        .map(|p| (p.name.clone(), p.initial))
-        .collect();
+    let mut env: BTreeMap<String, f64> =
+        params.iter().map(|p| (p.name.clone(), p.initial)).collect();
     env.insert("x".to_string(), initial_x);
 
     // Client config: the parsed AST replaces the source expression.
@@ -370,7 +360,10 @@ mod tests {
             "xslider": true
         });
         let html = html(Some(cfg));
-        assert!(html.contains("y(20.0 cm) = 2.00 + 0.100·20.0 = 4.00 cm"), "{html}");
+        assert!(
+            html.contains("y(20.0 cm) = 2.00 + 0.100·20.0 = 4.00 cm"),
+            "{html}"
+        );
         assert!(html.contains(r#"data-param="y0""#), "{html}");
         assert!(html.contains(r#"data-param="th""#), "{html}");
     }

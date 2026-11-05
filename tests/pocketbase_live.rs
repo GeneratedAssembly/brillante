@@ -10,7 +10,7 @@
 use std::fs;
 
 use axum::body::Body;
-use axum::http::{header, Request, StatusCode};
+use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
@@ -155,10 +155,7 @@ async fn signup_login_and_progress_round_trip() {
         .unwrap();
     let (_, body, _) = body_of(response).await;
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(
-        json["courses"]["live-course"],
-        serde_json::json!(["first"])
-    );
+    assert_eq!(json["courses"]["live-course"], serde_json::json!(["first"]));
 
     let (_, lesson_html, _) = body_of(
         router
@@ -209,7 +206,6 @@ async fn signup_login_and_progress_round_trip() {
             .is_none_or(|v| v.as_array().is_some_and(|a| a.is_empty())),
         "lesson should be unmarked: {body}"
     );
-
 }
 
 #[tokio::test]
@@ -224,7 +220,9 @@ async fn login_rejects_bad_password_generically() {
         .oneshot(
             Request::post("/auth/login")
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from("email=nobody-404@test.local&password=whatever12"))
+                .body(Body::from(
+                    "email=nobody-404@test.local&password=whatever12",
+                ))
                 .unwrap(),
         )
         .await
@@ -440,8 +438,13 @@ async fn dashboard_and_profile_reflect_progress() {
     let session = signup_session(&router).await;
 
     assert_eq!(
-        post(&router, "/my/subscriptions", "course=live-course&action=subscribe&next=/", &session)
-            .await,
+        post(
+            &router,
+            "/my/subscriptions",
+            "course=live-course&action=subscribe&next=/",
+            &session
+        )
+        .await,
         StatusCode::SEE_OTHER
     );
     let response = router
@@ -463,13 +466,19 @@ async fn dashboard_and_profile_reflect_progress() {
         router
             .clone()
             .oneshot(
-                Request::get("/").header(header::COOKIE, &session).body(Body::empty()).unwrap(),
+                Request::get("/")
+                    .header(header::COOKIE, &session)
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap(),
     )
     .await;
-    assert!(home.contains("Welcome back"), "signed-in home is a dashboard");
+    assert!(
+        home.contains("Welcome back"),
+        "signed-in home is a dashboard"
+    );
     assert!(home.contains("My courses"));
     assert!(home.contains("1 of 2 lessons"), "progress count rendered");
     assert!(home.contains("width: 50%"), "progress bar rendered");
@@ -491,8 +500,14 @@ async fn dashboard_and_profile_reflect_progress() {
             .unwrap(),
     )
     .await;
-    assert!(account.contains("Dash Tester"), "profile shows display name");
-    assert!(account.contains("Member since"), "profile shows member-since");
+    assert!(
+        account.contains("Dash Tester"),
+        "profile shows display name"
+    );
+    assert!(
+        account.contains("Member since"),
+        "profile shows member-since"
+    );
     assert!(account.contains("profile-stats"), "stats block rendered");
     assert!(account.contains("Keep going"), "in-progress list rendered");
 
@@ -513,6 +528,13 @@ async fn dashboard_and_profile_reflect_progress() {
     assert!(browse.contains("/course/live-course/second"));
 }
 
+fn first_entry_id(page: &str) -> Option<String> {
+    let start = page.find("?note=")? + "?note=".len();
+    let rest = &page[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
 #[tokio::test]
 async fn notebook_save_preview_and_index_round_trip() {
     let Some(pb) = url() else {
@@ -523,10 +545,19 @@ async fn notebook_save_preview_and_index_round_trip() {
     let session = signup_session(&router).await;
 
     let (_, lesson) = get_with(&router, "/course/live-course/first", &session).await;
-    assert!(lesson.contains("id=\"notebook\""), "signed-in drawer renders");
-    assert!(lesson.contains("/assets/notes.js"), "drawer pulls its assets");
+    assert!(
+        lesson.contains("id=\"notebook\""),
+        "signed-in drawer renders"
+    );
+    assert!(
+        lesson.contains("/assets/notes.js"),
+        "drawer pulls its assets"
+    );
     let (_, anon) = get(&router, "/course/live-course/first").await;
-    assert!(!anon.contains("id=\"notebook\""), "anonymous sees no drawer");
+    assert!(
+        !anon.contains("id=\"notebook\""),
+        "anonymous sees no drawer"
+    );
 
     let status = post(
         &router,
@@ -536,13 +567,40 @@ async fn notebook_save_preview_and_index_round_trip() {
     )
     .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    let (_, saved_page) = get_with(&router, "/course/live-course/first?notes=saved", &session).await;
-    assert!(saved_page.contains("Note saved."), "status line on redirect target");
+    let (_, saved_page) =
+        get_with(&router, "/course/live-course/first?notes=saved", &session).await;
+    assert!(
+        saved_page.contains("Note saved."),
+        "status line on redirect target"
+    );
+
+    let status = post(
+        &router,
+        "/notes/live-course/first",
+        "body=Second+note.&anchor=&here_title=",
+        &session,
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (_, two_notes) = get_with(&router, "/course/live-course/first", &session).await;
+    assert_eq!(
+        two_notes.matches("data-notebook-entry-item").count(),
+        2,
+        "saving twice appends a second note"
+    );
 
     let (_, index) = get_with(&router, "/notes/live-course", &session).await;
     assert!(index.contains("Notes — Live Course"));
-    assert!(index.contains("/course/live-course/second"), "lesson shorthand");
+    assert!(
+        index.contains("/course/live-course/second"),
+        "lesson shorthand"
+    );
     assert!(index.contains("dead-link"), "unknown slug renders dead");
+    assert_eq!(
+        index.matches("class=\"notebook-entry-note\"").count(),
+        2,
+        "index lists both notes under the lesson"
+    );
 
     let response = router
         .clone()
@@ -559,7 +617,62 @@ async fn notebook_save_preview_and_index_round_trip() {
         .unwrap();
     let (status, fragment, _) = body_of(response).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(fragment.contains("/course/live-course/second"), "preview expands shorthand");
+    assert!(
+        fragment.contains("/course/live-course/second"),
+        "preview expands shorthand"
+    );
+
+    let id = first_entry_id(&two_notes).expect("drawer exposes an edit target");
+    let status = post(
+        &router,
+        &format!("/notes/live-course/first/{id}"),
+        "body=Edited+body+[[second]].&anchor=&here_title=",
+        &session,
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (_, edited_page) = get_with(&router, "/course/live-course/first", &session).await;
+    assert!(
+        edited_page.contains("Edited body"),
+        "update replaces that entry"
+    );
+    assert_eq!(
+        edited_page.matches("data-notebook-entry-item").count(),
+        2,
+        "updating does not add a note"
+    );
+
+    let status = post(
+        &router,
+        &format!("/notes/live-course/first/{id}/delete"),
+        "",
+        &session,
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (_, one_note) = get_with(&router, "/course/live-course/first", &session).await;
+    assert_eq!(
+        one_note.matches("data-notebook-entry-item").count(),
+        1,
+        "delete removes exactly one entry"
+    );
+
+    let remaining = first_entry_id(&one_note).expect("one entry remains");
+    let status = post(
+        &router,
+        &format!("/notes/live-course/first/{remaining}"),
+        "body=&anchor=&here_title=",
+        &session,
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (_, empty_page) = get_with(&router, "/course/live-course/first", &session).await;
+    assert!(
+        !empty_page.contains("data-notebook-entry-item"),
+        "empty update deletes the entry"
+    );
+    let (_, index) = get_with(&router, "/notes/live-course", &session).await;
+    assert!(index.contains("No notes yet"), "notebook is empty again");
 
     let status = post(
         &router,
@@ -570,24 +683,34 @@ async fn notebook_save_preview_and_index_round_trip() {
     .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     let (_, index) = get_with(&router, "/notes/live-course", &session).await;
-    assert!(index.contains("at @here"), "unknown anchor drops to literal text");
-
-    let status = post(&router, "/notes/live-course/first", "body=&anchor=&here_title=", &session).await;
-    assert_eq!(status, StatusCode::SEE_OTHER);
-    let (_, index) = get_with(&router, "/notes/live-course", &session).await;
-    assert!(index.contains("No notes yet"), "empty body deletes the entry");
+    assert!(
+        index.contains("at @here"),
+        "unknown anchor drops to literal text"
+    );
+    let mine = first_entry_id(
+        &get_with(&router, "/course/live-course/first", &session)
+            .await
+            .1,
+    )
+    .expect("entry id for ownership check");
 
     let other = signup_session(&router).await;
     let (_, other_index) = get_with(&router, "/notes/live-course", &other).await;
-    assert!(other_index.contains("No notes yet"), "entries are owner-scoped");
+    assert!(
+        other_index.contains("No notes yet"),
+        "entries are owner-scoped"
+    );
     let other_status = post(
         &router,
-        "/notes/live-course/first",
+        &format!("/notes/live-course/first/{mine}"),
         "body=intruder&anchor=&here_title=",
         &other,
     )
     .await;
     assert_eq!(other_status, StatusCode::SEE_OTHER);
-    let (_, mine) = get_with(&router, "/notes/live-course", &session).await;
-    assert!(!mine.contains("intruder"), "one user's save never appears in another's notebook");
+    let (_, mine_page) = get_with(&router, "/notes/live-course", &session).await;
+    assert!(
+        !mine_page.contains("intruder"),
+        "one user's save never touches another's note"
+    );
 }

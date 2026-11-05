@@ -1,16 +1,22 @@
 use std::path::PathBuf;
 
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-use crate::web::access::{self, Visibility};
 use crate::web::AppState;
+use crate::web::access::{self, Visibility};
 
 const BLOCKED_EXTENSIONS: [&str; 1] = ["toml"];
 
 fn content_type(path: &str) -> &'static str {
-    match path.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
+    match path
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "svg" => "image/svg+xml",
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
@@ -61,7 +67,9 @@ pub async fn serve(
         || rel.starts_with('/')
         || rel.contains('\\')
         || rel.contains('\0')
-        || rel_path.components().any(|c| matches!(c, std::path::Component::ParentDir))
+        || rel_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
     {
         return (StatusCode::BAD_REQUEST, "invalid path").into_response();
     }

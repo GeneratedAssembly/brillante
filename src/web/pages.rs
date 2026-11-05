@@ -7,12 +7,12 @@ use leptos::prelude::*;
 
 use crate::content::course::Course;
 use crate::content::markdown::{self, MarkdownCtx};
-use crate::diag::{log_diagnostics, Diagnostic};
+use crate::diag::{Diagnostic, log_diagnostics};
 use crate::render::render_document;
+use crate::web::AppState;
 use crate::web::access::{self, Viewer};
 use crate::web::search;
 use crate::web::session::{self, Session};
-use crate::web::AppState;
 
 fn lessons_by_file(course: &Course) -> HashMap<String, String> {
     course
@@ -31,7 +31,7 @@ pub(crate) async fn server_progress(
     let Some(pb) = &state.pb else {
         return HashSet::new();
     };
-    let Some(raw) = session::cookie_from_headers(headers) else {
+    let Some(raw) = session::token_from_headers(headers) else {
         return HashSet::new();
     };
     let Some((user_id, exp)) = session::decode_claims(&raw) else {
@@ -64,11 +64,7 @@ fn access_denied(course_slug: &str, viewer: &Viewer) -> Response {
     if viewer.signed_in() {
         not_found_page()
     } else {
-        Redirect::to(&format!(
-            "/account?next=/course/{}",
-            urlencode(course_slug)
-        ))
-        .into_response()
+        Redirect::to(&format!("/account?next=/course/{}", urlencode(course_slug))).into_response()
     }
 }
 
@@ -125,6 +121,32 @@ fn ack_banner(course: &Course) -> Option<AnyView> {
         .into_any(),
     )
 }
+
+/// Fixed edge tab shown to signed-out visitors for account-gated features:
+/// it names the feature, describes what it does in its tooltip, and links to
+/// sign-in (returning to the page it was clicked on via `next`).
+fn locked_feature_tab(
+    id: &'static str,
+    label: &'static str,
+    description: &'static str,
+    next: &str,
+) -> AnyView {
+    let href = format!("/account?next={}", urlencode(next));
+    let text = format!("{label} · sign in");
+    view! {
+        <a id={id} class="feature-locked" href={href} title={description.to_string()}>
+            {text}
+        </a>
+    }
+    .into_any()
+}
+
+const SCRATCHPAD_BLURB: &str =
+    "A Python scratch pad runs next to the lesson. Sign in to use it.";
+const NOTES_BLURB: &str =
+    "Your lesson notebook: notes are saved to your account and sync across devices. Sign in to use it.";
+const TUTOR_BLURB: &str =
+    "An AI tutor answers your questions about this lesson. Sign in to use it.";
 
 fn scratchpad_view() -> AnyView {
     view! {
@@ -193,14 +215,26 @@ pub fn Shell(
         .into_iter()
         .map(|src| view! { <script src={src} defer></script> }.into_any())
         .collect::<Vec<_>>();
-    let scratchpad: AnyView = if data_course.is_some() {
-        extra_css.push(
-            view! { <link rel="stylesheet" href="/assets/scratchpad.css" /> }.into_any(),
-        );
-        extra_js.push(view! { <script src="/assets/scratchpad.js" defer></script> }.into_any());
-        scratchpad_view()
-    } else {
-        view! { <span hidden></span> }.into_any()
+    // The scratch pad is a signed-in feature: the drawer for the signed-in,
+    // a locked sign-in tab for anonymous visitors on an auth-enabled server,
+    // and nothing when accounts are disabled entirely.
+    let feature_next: Option<String> = match (&data_course, &data_lesson) {
+        (Some(c), Some(l)) => Some(format!("/course/{c}/{l}")),
+        (Some(c), None) => Some(format!("/course/{c}")),
+        _ => None,
+    };
+    let scratchpad: AnyView = match feature_next.as_deref() {
+        Some(_) if signed_in => {
+            extra_css
+                .push(view! { <link rel="stylesheet" href="/assets/scratchpad.css" /> }.into_any());
+            extra_js
+                .push(view! { <script src="/assets/scratchpad.js" defer></script> }.into_any());
+            scratchpad_view()
+        }
+        Some(next) if auth_enabled => {
+            locked_feature_tab("scratchpad-toggle", "Scratch pad", SCRATCHPAD_BLURB, next)
+        }
+        _ => view! { <span hidden></span> }.into_any(),
     };
 
     let account_nav: AnyView = if auth_enabled {
@@ -285,7 +319,7 @@ pub(crate) fn not_found_page() -> Response {
                 <Shell title="Not found — Brillante".to_string() content />
             }
         }))
-            .into_response(),
+        .into_response(),
     )
         .into_response()
 }
@@ -302,6 +336,7 @@ pub struct CatalogQuery {
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct LessonQuery {
     notes: Option<String>,
+    note: Option<String>,
 }
 
 pub async fn home(
@@ -381,16 +416,7 @@ pub async fn home(
             .courses
             .iter()
             .filter(|c| access::can_view(&c.slug, &viewer, &map))
-            .map(|c| {
-                course_card(
-                    c,
-                    is_private(&map, &c.slug),
-                    false,
-                    false,
-                    "/",
-                    None,
-                )
-            })
+            .map(|c| course_card(c, is_private(&map, &c.slug), false, false, "/", None))
             .collect();
         vec![
             view! {
@@ -638,9 +664,17 @@ pub async fn browse(
 
 fn subscribe_button(course_slug: &str, subscribed: bool, next: &str) -> AnyView {
     let (action, label, class) = if subscribed {
-        ("unsubscribe", "Subscribed", "button button-small button-outline subscribed")
+        (
+            "unsubscribe",
+            "Subscribed",
+            "button button-small button-outline subscribed",
+        )
     } else {
-        ("subscribe", "Subscribe", "button button-small button-outline")
+        (
+            "subscribe",
+            "Subscribe",
+            "button button-small button-outline",
+        )
     };
     view! {
         <form method="post" action="/my/subscriptions" class="subscribe-form">
@@ -663,7 +697,10 @@ fn course_card(
 ) -> AnyView {
     let title = c.title.clone();
     let desc = c.description.clone().unwrap_or_default();
-    let accent = c.accent.clone().unwrap_or_else(|| default_accent(&c.slug).to_string());
+    let accent = c
+        .accent
+        .clone()
+        .unwrap_or_else(|| default_accent(&c.slug).to_string());
     let style = format!("--accent: {accent}");
     let href = format!("/course/{}", c.slug);
     let count = if c.lessons.len() == 1 {
@@ -853,7 +890,11 @@ pub async fn course_page(
         view! { <span hidden></span> }.into_any()
     };
     let subscribe: AnyView = if auth_enabled && signed_in {
-        subscribe_button(&course.slug, viewer.subscriptions.contains(&course.slug), &format!("/course/{}", course.slug))
+        subscribe_button(
+            &course.slug,
+            viewer.subscriptions.contains(&course.slug),
+            &format!("/course/{}", course.slug),
+        )
     } else {
         view! { <span hidden></span> }.into_any()
     };
@@ -930,15 +971,16 @@ pub async fn lesson_page(
             .pb
             .as_ref()
             .unwrap()
-            .get_notebook_entry(&sess.token, &sess.user_id, &course.slug, &lesson_slug)
+            .list_lesson_entries(&sess.token, &sess.user_id, &course.slug, &lesson_slug)
             .await
         {
-            Ok(entry) => Some(crate::web::notes::drawer(
+            Ok(entries) => Some(crate::web::notes::drawer(
                 &state,
                 course,
                 lesson,
-                entry.as_ref(),
+                &entries,
                 params.notes.as_deref(),
+                params.note.as_deref(),
             )),
             Err(e) => {
                 tracing::warn!("notebook fetch failed for {slug}/{lesson_slug}: {e}");
@@ -948,7 +990,21 @@ pub async fn lesson_page(
     } else {
         None
     };
-    let tutor_ready = signed_in && state.tutor.settings(state.pb.as_ref()).await.ready();
+    let tutor_available = state.tutor.settings(state.pb.as_ref()).await.ready();
+    let tutor_ready = signed_in && tutor_available;
+    // Anonymous visitors get locked sign-in tabs for the account-gated
+    // drawers (notes always, the tutor when an admin has enabled it).
+    let lesson_path = format!("/course/{}/{}", course.slug, lesson_slug);
+    let notes_locked: Option<AnyView> = if auth_enabled && !signed_in {
+        Some(locked_feature_tab("notebook-toggle", "Notes", NOTES_BLURB, &lesson_path))
+    } else {
+        None
+    };
+    let tutor_locked: Option<AnyView> = if tutor_available && !signed_in {
+        Some(locked_feature_tab("tutor-toggle", "Tutor", TUTOR_BLURB, &lesson_path))
+    } else {
+        None
+    };
 
     let mut diags: Vec<Diagnostic> = Vec::new();
     let body_md = markdown::strip_title_heading(&lesson.body, &lesson.title);
@@ -959,6 +1015,8 @@ pub async fn lesson_page(
         source: &file_path,
         lessons_by_file: &by_file,
         widgets: true,
+        ai_locked: !signed_in,
+        auth_available: auth_enabled,
     };
     let output = markdown::render_markdown(&body_md, &ctx, &state.registry, &mut diags);
     log_diagnostics(&diags);
@@ -966,7 +1024,7 @@ pub async fn lesson_page(
     let mut extra_css: Vec<String> = Vec::new();
     let mut extra_js: Vec<String> = Vec::new();
     let mut kinds = output.widget_kinds.clone();
-    if kinds.contains("stepper") {
+    if kinds.contains("stepper") || kinds.contains("assignment") || kinds.contains("teach") {
         kinds.insert("math".to_string());
     }
     for kind in &kinds {
@@ -1067,9 +1125,13 @@ pub async fn lesson_page(
     );
     if let Some(drawer) = note_drawer {
         content.push(drawer);
+    } else if let Some(tab) = notes_locked {
+        content.push(tab);
     }
     if tutor_ready {
         content.push(crate::web::tutor::drawer());
+    } else if let Some(tab) = tutor_locked {
+        content.push(tab);
     }
 
     let accent = course
@@ -1096,7 +1158,6 @@ pub async fn lesson_page(
     }))
     .into_response()
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1127,7 +1188,10 @@ mod tests {
     }
 
     fn done(pairs: &[&str]) -> HashSet<(String, String)> {
-        pairs.iter().map(|p| ("c".to_string(), p.to_string())).collect()
+        pairs
+            .iter()
+            .map(|p| ("c".to_string(), p.to_string()))
+            .collect()
     }
 
     #[test]

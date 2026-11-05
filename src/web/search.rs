@@ -78,12 +78,7 @@ mod tests {
         }
     }
 
-    fn course(
-        slug: &str,
-        title: &str,
-        description: Option<&str>,
-        lessons: Vec<Lesson>,
-    ) -> Course {
+    fn course(slug: &str, title: &str, description: Option<&str>, lessons: Vec<Lesson>) -> Course {
         Course::test_stub(
             slug.into(),
             title.into(),
@@ -135,8 +130,18 @@ mod tests {
     #[test]
     fn invisible_courses_never_match() {
         let courses = vec![
-            course("public", "Public Optics", None, vec![lesson("p", "Public lens")]),
-            course("secret", "Secret Optics", None, vec![lesson("s", "Secret lens")]),
+            course(
+                "public",
+                "Public Optics",
+                None,
+                vec![lesson("p", "Public lens")],
+            ),
+            course(
+                "secret",
+                "Secret Optics",
+                None,
+                vec![lesson("s", "Secret lens")],
+            ),
         ];
         let hits = search(&courses, "optics", |slug| slug != "secret");
         assert_eq!(hits.len(), 1);

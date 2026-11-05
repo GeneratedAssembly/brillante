@@ -84,6 +84,51 @@
       });
     }
 
+    const form = aside.querySelector("[data-notebook-form]");
+    const createAction = form ? form.getAttribute("data-notebook-create-action") : null;
+    const editingBar = aside.querySelector("[data-notebook-editing]");
+    const newBtn = aside.querySelector("[data-notebook-new]");
+
+    if (form && createAction) {
+      aside.querySelectorAll("[data-notebook-edit]").forEach((a) => {
+        a.addEventListener("click", (e) => {
+          const id = a.getAttribute("data-notebook-entry");
+          const item = a.closest("[data-notebook-entry-item]");
+          const raw = id
+            ? aside.querySelector(`textarea[data-notebook-raw][data-notebook-entry="${id}"]`)
+            : null;
+          if (!item || !raw) return;
+          e.preventDefault();
+          input.value = raw.value;
+          anchorField.value = item.getAttribute("data-entry-anchor") || "";
+          hereField.value = item.getAttribute("data-entry-here") || "";
+          form.setAttribute("action", createAction + "/" + id);
+          if (editingBar) editingBar.hidden = false;
+          if (previewOut) previewOut.hidden = true;
+          form.scrollIntoView({ block: "nearest" });
+          input.focus();
+        });
+      });
+      if (newBtn) {
+        newBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          input.value = "";
+          anchorField.value = "";
+          hereField.value = "";
+          form.setAttribute("action", createAction);
+          if (editingBar) editingBar.hidden = true;
+          if (previewOut) previewOut.hidden = true;
+          input.focus();
+        });
+      }
+    }
+
+    aside.querySelectorAll("[data-notebook-delete]").forEach((f) => {
+      f.addEventListener("submit", (e) => {
+        if (window.confirm && !window.confirm("Delete this note?")) e.preventDefault();
+      });
+    });
+
     let items = [];
     let active = -1;
 

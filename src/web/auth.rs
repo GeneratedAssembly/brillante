@@ -1,15 +1,15 @@
 use std::collections::HashSet;
 
 use axum::extract::{Query, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use leptos::prelude::*;
 
 use crate::content::course::Course;
 use crate::render::render_document;
+use crate::web::AppState;
 use crate::web::pages::{self, Shell};
 use crate::web::session::{self, cleared_cookie, session_cookie};
-use crate::web::AppState;
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct NextParam {
@@ -26,9 +26,9 @@ fn error_text(code: Option<&String>) -> Option<&'static str> {
     match code.map(|c| c.as_str()) {
         Some("invalid") => Some("Invalid email or password."),
         Some("mismatch") => Some("Passwords do not match."),
-        Some("signup") => {
-            Some("Could not create the account: the email may already be in use, or the password is too short.")
-        }
+        Some("signup") => Some(
+            "Could not create the account: the email may already be in use, or the password is too short.",
+        ),
         Some("unavailable") => Some("The account service is unavailable. Please try again."),
         Some("disabled") => Some("Accounts are not configured on this server."),
         Some("oauth") => {
@@ -236,32 +236,34 @@ pub async fn account_page(
         let subs_text = subs.len().to_string();
         let done_text = done.len().to_string();
         let inprog_text = in_progress.len().to_string();
-        vec![view! {
-            <section class="auth-panel profile-panel">
-                <h1>{name}</h1>
-                {email_line}
-                {since_line}
-                {role_chips}
-                <div class="profile-stats">
-                    <span class="profile-stat">
-                        <b>{subs_text}</b><span>"courses subscribed"</span>
-                    </span>
-                    <span class="profile-stat">
-                        <b>{done_text}</b><span>"lessons completed"</span>
-                    </span>
-                    <span class="profile-stat">
-                        <b>{inprog_text}</b><span>"in progress"</span>
-                    </span>
-                </div>
-                {keep_going}
-                <p>"Course progress is saved to your account."</p>
-                <form method="post" action="/auth/logout" class="auth-form">
-                    <input type="hidden" name="next" value={next.clone()} />
-                    <button type="submit" class="button button-outline">"Sign out"</button>
-                </form>
-            </section>
-        }
-        .into_any()]
+        vec![
+            view! {
+                <section class="auth-panel profile-panel">
+                    <h1>{name}</h1>
+                    {email_line}
+                    {since_line}
+                    {role_chips}
+                    <div class="profile-stats">
+                        <span class="profile-stat">
+                            <b>{subs_text}</b><span>"courses subscribed"</span>
+                        </span>
+                        <span class="profile-stat">
+                            <b>{done_text}</b><span>"lessons completed"</span>
+                        </span>
+                        <span class="profile-stat">
+                            <b>{inprog_text}</b><span>"in progress"</span>
+                        </span>
+                    </div>
+                    {keep_going}
+                    <p>"Course progress is saved to your account."</p>
+                    <form method="post" action="/auth/logout" class="auth-form">
+                        <input type="hidden" name="next" value={next.clone()} />
+                        <button type="submit" class="button button-outline">"Sign out"</button>
+                    </form>
+                </section>
+            }
+            .into_any(),
+        ]
     } else {
         vec![
             view! {
@@ -292,7 +294,6 @@ pub async fn account_page(
                 </section>
             }
             .into_any(),
-            
         ]
     };
     let title = "Account — Brillante".to_string();
@@ -431,8 +432,10 @@ pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
                     })),
                 )
                     .into_response();
-                resp.headers_mut()
-                    .append(header::SET_COOKIE, header_value(cleared_cookie().to_string()));
+                resp.headers_mut().append(
+                    header::SET_COOKIE,
+                    header_value(cleared_cookie().to_string()),
+                );
                 return resp;
             }
             Err(other) => {
@@ -462,7 +465,9 @@ fn member_since(created: &str) -> Option<&str> {
         d.len() == 10
             && d.as_bytes()[4] == b'-'
             && d.as_bytes()[7] == b'-'
-            && d.bytes().enumerate().all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
+            && d.bytes()
+                .enumerate()
+                .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
     })
 }
 

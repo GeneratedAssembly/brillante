@@ -5,7 +5,7 @@ pub mod markdown;
 use std::path::PathBuf;
 
 use crate::content::course::Course;
-use crate::diag::{log_diagnostics, Diagnostic};
+use crate::diag::{Diagnostic, log_diagnostics};
 
 #[derive(Debug, Clone)]
 pub struct ContentStore {

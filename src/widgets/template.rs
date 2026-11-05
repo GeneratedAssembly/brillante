@@ -78,16 +78,9 @@ pub fn render(
 mod tests {
     use super::*;
 
-    fn render_with(
-        template: &str,
-        table: &[(&str, f64)],
-        defaults: &[(&str, usize)],
-    ) -> String {
+    fn render_with(template: &str, table: &[(&str, f64)], defaults: &[(&str, usize)]) -> String {
         render(template, &mut |name, dec| {
-            let v = table
-                .iter()
-                .find(|(n, _)| *n == name)
-                .map(|(_, v)| *v)?;
+            let v = table.iter().find(|(n, _)| *n == name).map(|(_, v)| *v)?;
             let dec = dec.unwrap_or_else(|| {
                 defaults
                     .iter()
@@ -112,8 +105,14 @@ mod tests {
     #[test]
     fn unknown_placeholders_stay_literal() {
         let table = [("x", 2.0)];
-        assert_eq!(render_with("a {x} b {nope} c", &table, &[]), "a 2.000 b {nope} c");
-        assert_eq!(render_with("dangling {brace", &table, &[]), "dangling {brace");
+        assert_eq!(
+            render_with("a {x} b {nope} c", &table, &[]),
+            "a 2.000 b {nope} c"
+        );
+        assert_eq!(
+            render_with("dangling {brace", &table, &[]),
+            "dangling {brace"
+        );
     }
 
     #[test]

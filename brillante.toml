@@ -1,4 +1,4 @@
-courses = ["content/getting-started", "courses/collapse", "courses/crlb", "courses/optics-course", "courses/diffractive-optics"]
+courses = ["content/getting-started", "courses/collapse", "courses/crlb", "courses/optics-course", "courses/diffractive-optics", "courses/stats/course"]
 
 [server]
 host = "127.0.0.1"

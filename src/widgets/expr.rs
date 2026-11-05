@@ -5,11 +5,13 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::widgets::WidgetError;
 
-const FUNCTIONS: [&str; 9] = ["exp", "log", "sqrt", "abs", "min", "max", "pow", "sin", "cos"];
+const FUNCTIONS: [&str; 9] = [
+    "exp", "log", "sqrt", "abs", "min", "max", "pow", "sin", "cos",
+];
 const CONSTANTS: [&str; 1] = ["pi"];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -295,10 +297,12 @@ impl<'a> Parser<'a> {
 
 fn validate_param_names(params: &[String], src: &str) -> Result<(), WidgetError> {
     let invalid = |name: &str| {
-        !name.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        !name
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_alphabetic() || c == '_')
+            .unwrap_or(false)
+            || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
     };
     for p in params {
         if p == "x" || CONSTANTS.contains(&p.as_str()) || FUNCTIONS.contains(&p.as_str()) {
@@ -348,11 +352,7 @@ pub fn eval_ast(node: &Value, env: &BTreeMap<String, f64>) -> f64 {
     let args = |which: usize| {
         a.get(which)
             .and_then(Value::as_array)
-            .map(|xs| {
-                xs.iter()
-                    .map(|n| eval_ast(n, env))
-                    .collect::<Vec<f64>>()
-            })
+            .map(|xs| xs.iter().map(|n| eval_ast(n, env)).collect::<Vec<f64>>())
             .unwrap_or_default()
     };
     match tag {
@@ -412,7 +412,11 @@ mod tests {
         let ast = parse("B + a*x^2", &names(&["B", "a"])).unwrap();
         assert_eq!(
             ast,
-            json!(["+", ["v", "B"], ["*", ["v", "a"], ["^", ["v", "x"], ["n", 2.0]]]])
+            json!([
+                "+",
+                ["v", "B"],
+                ["*", ["v", "a"], ["^", ["v", "x"], ["n", 2.0]]]
+            ])
         );
     }
 
@@ -421,7 +425,11 @@ mod tests {
         let ast = parse("-2*x + 1/3", &[]).unwrap();
         assert_eq!(
             ast,
-            json!(["+", ["*", ["neg", ["n", 2.0]], ["v", "x"]], ["/", ["n", 1.0], ["n", 3.0]]])
+            json!([
+                "+",
+                ["*", ["neg", ["n", 2.0]], ["v", "x"]],
+                ["/", ["n", 1.0], ["n", 3.0]]
+            ])
         );
     }
 

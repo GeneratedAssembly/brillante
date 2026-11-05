@@ -1,8 +1,10 @@
 pub mod access;
 pub mod admin;
 pub mod assets;
+pub mod assignments;
 pub mod auth;
 pub mod content_files;
+pub mod grader;
 pub mod notes;
 pub mod oauth;
 pub mod pages;
@@ -10,12 +12,13 @@ pub mod progress;
 pub mod search;
 pub mod session;
 pub mod subscriptions;
+pub mod teach;
 pub mod tutor;
 
 use std::sync::Arc;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 use crate::config::PocketBaseConfig;
 use crate::content::ContentStore;
@@ -30,6 +33,7 @@ pub struct AppState {
     pub pb_config: Option<PocketBaseConfig>,
     pub access: access::AccessState,
     pub tutor: tutor::TutorState,
+    pub grader: grader::GraderState,
 }
 
 pub fn build_router(state: AppState) -> Router {
@@ -55,47 +59,34 @@ pub fn build_router(state: AppState) -> Router {
         .route("/admin/tutor", get(admin::tutor_page))
         .route("/admin/tutor", post(admin::tutor_save))
         .route("/api/tutor/chat", post(tutor::chat))
+        .route("/admin/grader", get(admin::grader_page))
+        .route("/admin/grader", post(admin::grader_save))
+        .route("/api/assignment/preview", post(assignments::preview))
+        .route("/api/assignment/grade", post(assignments::grade))
+        .route("/api/assignment/submission", get(assignments::submission))
+        .route("/api/teach/preview", post(teach::preview))
+        .route("/api/teach/grade", post(teach::grade))
+        .route("/api/teach/submission", get(teach::submission))
         .route("/course/{slug}", get(pages::course_page))
         .route("/course/{slug}/{lesson}", get(pages::lesson_page))
         .route("/notes/{course}", get(notes::index))
         .route("/notes/{course}/{lesson}", post(notes::save))
+        .route("/notes/{course}/{lesson}/{entry}", post(notes::update))
+        .route(
+            "/notes/{course}/{lesson}/{entry}/delete",
+            post(notes::delete_entry),
+        )
         .route("/api/notes/preview", post(notes::preview))
         .route("/assets/{file}", get(assets::site_asset))
         .route("/widgets/{kind}/{asset}", get(assets::widget_asset))
         .route("/content/{course}/{*path}", get(content_files::serve))
         .route("/healthz", get(healthz))
-        .route("/admin/reload", post(reload))
-        .route("/admin/diagnostics", get(diagnostics))
+        .route("/admin/reload", post(admin::reload))
+        .route("/admin/diagnostics", get(admin::diagnostics))
         .fallback(pages::not_found)
         .with_state(state)
 }
 
 async fn healthz() -> &'static str {
     "ok"
-}
-
-async fn reload(axum::extract::State(state): axum::extract::State<AppState>) -> String {
-    let fresh = {
-        let store = state.store.read().await;
-        store.reload()
-    };
-    let summary = format!(
-        "reloaded {} course(s), {} diagnostic(s)",
-        fresh.courses.len(),
-        fresh.diagnostics.len()
-    );
-    *state.store.write().await = Arc::new(fresh);
-    summary
-}
-
-async fn diagnostics(axum::extract::State(state): axum::extract::State<AppState>) -> String {
-    let store = state.store.read().await;
-    if store.diagnostics.is_empty() {
-        return "no diagnostics\n".to_string();
-    }
-    let mut out = String::new();
-    for d in &store.diagnostics {
-        out.push_str(&format!("{d}\n"));
-    }
-    out
 }

@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use axum::http::HeaderMap;
 
 use crate::pb::{CourseAccessRow, PbError, PocketBase};
-use crate::web::session::{self, Session};
 use crate::web::AppState;
+use crate::web::session::{self, Session};
 
 pub const ADMIN_ROLE: &str = "admin";
 const CACHE_TTL: Duration = Duration::from_secs(30);
@@ -182,7 +182,7 @@ pub async fn viewer(state: &AppState, headers: &HeaderMap) -> Viewer {
     let Some(pb) = &state.pb else {
         return Viewer::anonymous();
     };
-    let Some(raw) = session::cookie_from_headers(headers) else {
+    let Some(raw) = session::token_from_headers(headers) else {
         return Viewer::anonymous();
     };
     let Some((user_id, exp)) = session::decode_claims(&raw) else {

@@ -1,19 +1,18 @@
 use std::collections::BTreeMap;
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 
 use crate::pb::PbError;
-use crate::web::session::Authed;
 use crate::web::AppState;
+use crate::web::session::Authed;
 
 fn valid_slug(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 160
-        && s
-            .bytes()
+        && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         && !s.starts_with('-')
         && !s.ends_with('-')

@@ -85,7 +85,9 @@ fn main() {
     };
 
     let config_path = args.config.clone().or_else(|| {
-        PathBuf::from("brillante.toml").is_file().then_some(PathBuf::from("brillante.toml"))
+        PathBuf::from("brillante.toml")
+            .is_file()
+            .then_some(PathBuf::from("brillante.toml"))
     });
 
     let app_config = match AppConfig::load(

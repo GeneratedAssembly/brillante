@@ -1,7 +1,7 @@
-use serde_json::Value;
 use leptos::prelude::*;
+use serde_json::Value;
 
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
 fn is_hex_color(s: &str) -> bool {
     let body = s.strip_prefix('#').unwrap_or(s);
@@ -9,9 +9,9 @@ fn is_hex_color(s: &str) -> bool {
 }
 
 fn parse_points(raw: &Value, index: usize) -> Result<Vec<(f64, f64)>, WidgetError> {
-    let arr = raw
-        .as_array()
-        .ok_or_else(|| WidgetError::Invalid(format!("series {index}: 'points' must be an array")))?;
+    let arr = raw.as_array().ok_or_else(|| {
+        WidgetError::Invalid(format!("series {index}: 'points' must be an array"))
+    })?;
     let mut points = Vec::with_capacity(arr.len());
     for p in arr {
         let pair = p.as_array().ok_or_else(|| {
@@ -61,9 +61,9 @@ fn parse_series(w: &WidgetInstance) -> Result<Vec<Series>, WidgetError> {
                 index = i
             )));
         }
-        let points_raw = entry.get("points").ok_or_else(|| {
-            WidgetError::Invalid(format!("series {}: missing 'points'", i))
-        })?;
+        let points_raw = entry
+            .get("points")
+            .ok_or_else(|| WidgetError::Invalid(format!("series {}: missing 'points'", i)))?;
         let points = parse_points(points_raw, i)?;
         if points.is_empty() {
             return Err(WidgetError::Invalid(format!(
@@ -123,5 +123,10 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
         <div class="plot-legend">{legend}</div>
     };
 
-    Ok(widget_shell("plot", &w.id, serialize_config(w.config.as_ref()), inner.into_any()))
+    Ok(widget_shell(
+        "plot",
+        &w.id,
+        serialize_config(w.config.as_ref()),
+        inner.into_any(),
+    ))
 }

@@ -2,14 +2,12 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use leptos::prelude::*;
-use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
-use pulldown_cmark::{
-    Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
-};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::content::course::{Course, Lesson};
 use crate::diag::Diagnostic;
-use crate::widgets::{resolve, WidgetInstance, WidgetRegistry};
+use crate::widgets::{WidgetInstance, WidgetRegistry, resolve, resolve_locked_ai};
 
 const PATH_SAFE: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -17,6 +15,14 @@ const PATH_SAFE: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'.')
     .remove(b'~')
     .remove(b'/');
+
+/// For `?next=` values: the same escaping as `web::pages::urlencode`
+/// (everything but RFC 3986 unreserved characters, `/` included).
+const QUERY_SAFE: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
 
 #[derive(Debug, Clone)]
 pub struct WidgetTag {
@@ -32,6 +38,14 @@ pub struct MarkdownCtx<'a> {
     /// are emitted as escaped literal text instead of being scanned and
     /// resolved, so user notes can never reference course widget configs.
     pub widgets: bool,
+    /// True when the viewer is anonymous: the AI-graded widgets
+    /// (`assignment`, `teach`) render a locked card describing the feature
+    /// and pointing at sign-in instead of the interactive editor. Their
+    /// graded endpoints are signed-in only regardless.
+    pub ai_locked: bool,
+    /// Whether a sign-in path exists at all (accounts enabled on this
+    /// server); locked cards only offer the sign-in CTA when it does.
+    pub auth_available: bool,
 }
 
 pub struct MarkdownOutput {
@@ -71,7 +85,10 @@ pub fn render_markdown(
         heading_text: None,
     };
     let views = p.blocks();
-    MarkdownOutput { views, widget_kinds: p.kinds }
+    MarkdownOutput {
+        views,
+        widget_kinds: p.kinds,
+    }
 }
 
 fn paragraph(inline: Vec<AnyView>) -> AnyView {
@@ -199,22 +216,17 @@ pub fn strip_title_heading(body: &str, title: &str) -> String {
             continue;
         }
         if let Some(rest) = t.strip_prefix("# ")
-            && rest.trim() == title.trim() {
-                offset += line.len();
-                return body[offset..]
-                    .trim_start_matches(['\n', '\r'])
-                    .to_string();
-            }
+            && rest.trim() == title.trim()
+        {
+            offset += line.len();
+            return body[offset..].trim_start_matches(['\n', '\r']).to_string();
+        }
         break;
     }
     body.to_string()
 }
 
-pub fn scan_widget_tags(
-    chunk: &str,
-    source: &Path,
-    diags: &mut Vec<Diagnostic>,
-) -> Vec<WidgetTag> {
+pub fn scan_widget_tags(chunk: &str, source: &Path, diags: &mut Vec<Diagnostic>) -> Vec<WidgetTag> {
     let lower = chunk.to_ascii_lowercase();
     let mut tags = Vec::new();
     let mut search = 0usize;
@@ -225,10 +237,9 @@ pub fn scan_widget_tags(
             .chars()
             .next()
             .is_none_or(|c| c.is_ascii_whitespace() || c == '>' || c == '/');
-        if boundary
-            && let Some(tag) = parse_widget_tag(chunk, after, source, diags) {
-                tags.push(tag);
-            }
+        if boundary && let Some(tag) = parse_widget_tag(chunk, after, source, diags) {
+            tags.push(tag);
+        }
         search = after;
     }
     tags
@@ -237,10 +248,7 @@ pub fn scan_widget_tags(
 /// Widget tags actually reachable by the renderer: runs the markdown parser
 /// and scans only HTML events, so `<Widget ... />` inside fenced code blocks
 /// or inline code is ignored.
-pub fn scan_widget_tags_in_markdown(
-    src: &str,
-    source: &Path,
-) -> Vec<WidgetTag> {
+pub fn scan_widget_tags_in_markdown(src: &str, source: &Path) -> Vec<WidgetTag> {
     let opts = md_options();
     let mut scratch = Vec::new();
     let mut tags = Vec::new();
@@ -354,9 +362,7 @@ fn parse_widget_tag(
         return None;
     }
     match (kind, id) {
-        (Some(kind), Some(id))
-            if !kind.trim().is_empty() && !id.trim().is_empty() =>
-        {
+        (Some(kind), Some(id)) if !kind.trim().is_empty() && !id.trim().is_empty() => {
             Some(WidgetTag {
                 kind: kind.trim().to_ascii_lowercase(),
                 id: id.trim().to_string(),
@@ -372,6 +378,23 @@ fn parse_widget_tag(
     }
 }
 
+/// `/account?next=<this lesson>` so sign-in returns to the page the locked
+/// card was read on; the same escaping as `web::pages::urlencode`. `None`
+/// when accounts are disabled (no sign-in path exists) or the current file
+/// is not a lesson of this course.
+fn sign_in_href(ctx: &MarkdownCtx) -> Option<String> {
+    if !ctx.auth_available {
+        return None;
+    }
+    let file = ctx.source.file_name()?.to_str()?;
+    let lesson = ctx.lessons_by_file.get(file)?;
+    let path = format!("/course/{}/{}", ctx.course.slug, lesson);
+    Some(format!(
+        "/account?next={}",
+        utf8_percent_encode(&path, QUERY_SAFE)
+    ))
+}
+
 impl<'a> MdParser<'a> {
     fn widget_view(&mut self, tag: WidgetTag) -> AnyView {
         let config = self.ctx.course.widget_config(&tag.id);
@@ -380,6 +403,19 @@ impl<'a> MdParser<'a> {
             id: tag.id.clone(),
             config,
         };
+        if self.ctx.ai_locked && matches!(tag.kind.as_str(), "assignment" | "teach") {
+            let sign_in = sign_in_href(self.ctx);
+            let (view, warning) = resolve_locked_ai(&instance, sign_in.as_deref());
+            if let Some(msg) = warning {
+                self.diags.push(Diagnostic::warning(self.ctx.source, msg));
+            } else {
+                // Keep the kind so the card's stylesheet and the prompt's
+                // math assets load; the widget JS finds no editor hooks and
+                // stays inert.
+                self.kinds.insert(tag.kind.clone());
+            }
+            return view;
+        }
         let (view, used_kind, warning) = resolve(&instance, self.registry);
         if let Some(msg) = warning {
             self.diags.push(Diagnostic::warning(self.ctx.source, msg));
@@ -410,10 +446,7 @@ impl<'a> MdParser<'a> {
         let mut out: Vec<AnyView> = Vec::new();
         let mut pending: Vec<AnyView> = Vec::new();
         loop {
-            if matches!(
-                self.events.peek(),
-                None | Some(Event::End(_))
-            ) {
+            if matches!(self.events.peek(), None | Some(Event::End(_))) {
                 break;
             }
             let ev = self.events.next().unwrap();
@@ -437,9 +470,7 @@ impl<'a> MdParser<'a> {
                     }
                 }
                 Event::Text(t) => pending.push(t.to_string().into_any()),
-                Event::Code(c) => {
-                    pending.push(view! { <code>{c.to_string()}</code> }.into_any())
-                }
+                Event::Code(c) => pending.push(view! { <code>{c.to_string()}</code> }.into_any()),
                 Event::SoftBreak => pending.push(" ".into_any()),
                 Event::HardBreak => pending.push(view! { <br /> }.into_any()),
                 Event::Rule => {
@@ -483,8 +514,7 @@ impl<'a> MdParser<'a> {
                     );
                     self.kinds.insert("math".to_string());
                 }
-                Event::TaskListMarker(_)
-                | Event::FootnoteReference(_) => {}
+                Event::TaskListMarker(_) | Event::FootnoteReference(_) => {}
                 Event::End(_) => break,
             }
         }
@@ -515,9 +545,7 @@ impl<'a> MdParser<'a> {
                     view! { <code>{c.to_string()}</code> }.into_any(),
                 )),
                 Event::SoftBreak => nodes.push(Node::Inline(" ".into_any())),
-                Event::HardBreak => {
-                    nodes.push(Node::Inline(view! { <br /> }.into_any()))
-                }
+                Event::HardBreak => nodes.push(Node::Inline(view! { <br /> }.into_any())),
                 Event::Html(h) | Event::InlineHtml(h) => {
                     if !self.ctx.widgets {
                         nodes.push(Node::Inline(h.to_string().into_any()));
@@ -645,15 +673,15 @@ impl<'a> MdParser<'a> {
                     }
                 }
                 let class = match &kind {
-                    CodeBlockKind::Fenced(l) if !l.is_empty() => {
-                        Some(format!("language-{l}"))
-                    }
+                    CodeBlockKind::Fenced(l) if !l.is_empty() => Some(format!("language-{l}")),
                     _ => None,
                 };
-                vec![view! {
-                    <pre><code class=class>{text}</code></pre>
-                }
-                .into_any()]
+                vec![
+                    view! {
+                        <pre><code class=class>{text}</code></pre>
+                    }
+                    .into_any(),
+                ]
             }
             Tag::HtmlBlock => {
                 let mut chunk = String::new();
@@ -746,10 +774,12 @@ impl<'a> MdParser<'a> {
                 }
                 let head = view! { <thead><tr>{head_cells}</tr></thead> }.into_any();
                 let body = view! { <tbody>{rows}</tbody> }.into_any();
-                vec![view! {
-                    <div class="table-wrap"><table>{head} {body}</table></div>
-                }
-                .into_any()]
+                vec![
+                    view! {
+                        <div class="table-wrap"><table>{head} {body}</table></div>
+                    }
+                    .into_any(),
+                ]
             }
             Tag::Emphasis => {
                 let inner = into_views(self.inline());
@@ -766,12 +796,16 @@ impl<'a> MdParser<'a> {
                 self.events.next();
                 vec![view! { <s>{inner}</s> }.into_any()]
             }
-            Tag::Link { dest_url, title, .. } => {
+            Tag::Link {
+                dest_url, title, ..
+            } => {
                 let inner = into_views(self.inline());
                 self.events.next();
                 vec![self.link_view(&dest_url, &title, inner)]
             }
-            Tag::Image { dest_url, title, .. } => {
+            Tag::Image {
+                dest_url, title, ..
+            } => {
                 let alt = self.inline_plain();
                 self.events.next();
                 vec![self.image_view(&dest_url, &title, alt)]
@@ -906,8 +940,11 @@ pub fn expand_note_links(src: &str, lessons: &[Lesson], here: Option<NoteHere<'_
     let mut last = 0usize;
     let mut i = 0usize;
     while i < src.len() {
+        // Advance by whole characters: slicing mid-char panics on
+        // multi-byte input (e.g. an em dash outside a protected span).
+        let step = src[i..].chars().next().map_or(1, char::len_utf8);
         if is_protected(&spans, i) {
-            i += 1;
+            i += step;
             continue;
         }
         if let Some((consumed, replacement)) =
@@ -919,7 +956,7 @@ pub fn expand_note_links(src: &str, lessons: &[Lesson], here: Option<NoteHere<'_
             last = i;
             continue;
         }
-        i += 1;
+        i += step;
     }
     out.push_str(&src[last..]);
     out
@@ -959,9 +996,10 @@ fn match_shorthand(
         return Some((consumed, replacement));
     }
     if let Some(rest) = src.strip_prefix("@here") {
-        let after_ok = rest.chars().next().is_none_or(|ch| {
-            !(ch.is_alphanumeric() || ch == '_')
-        });
+        let after_ok = rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !(ch.is_alphanumeric() || ch == '_'));
         let before_ok = !prev.is_some_and(|ch| ch.is_alphanumeric() || ch == '_');
         if !after_ok || !before_ok {
             return None;
@@ -1026,10 +1064,27 @@ mod tests {
     use crate::content::course::load_course_dir;
     use crate::diag::Severity;
 
-    fn fixture_course() -> (tempfile::TempDir, Course, std::collections::HashMap<String, String>) {
+    fn fixture_course() -> (
+        tempfile::TempDir,
+        Course,
+        std::collections::HashMap<String, String>,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("01-a.md"), "---\ntitle: A\n---\nbody").unwrap();
         std::fs::write(dir.path().join("02-b.md"), "---\ntitle: B\n---\nnext").unwrap();
+        std::fs::write(
+            dir.path().join("config.toml"),
+            r#"
+[widgets."com.example.assign"]
+prompt = "Solve for $x$."
+reference = "$x = 2$"
+
+[widgets."com.example.teach"]
+prompt = "Explain it."
+key_points = "The key point is $x$."
+"#,
+        )
+        .unwrap();
         let mut diags = Vec::new();
         let course = load_course_dir(dir.path(), &mut diags).unwrap();
         let by_file = course
@@ -1040,13 +1095,30 @@ mod tests {
         (dir, course, by_file)
     }
 
-    fn render_doc(src: &str, course: &Course, by_file: &std::collections::HashMap<String, String>) -> String {
+    fn render_doc(
+        src: &str,
+        course: &Course,
+        by_file: &std::collections::HashMap<String, String>,
+    ) -> String {
+        render_doc_as(src, course, by_file, true, false, false)
+    }
+
+    fn render_doc_as(
+        src: &str,
+        course: &Course,
+        by_file: &std::collections::HashMap<String, String>,
+        widgets: bool,
+        ai_locked: bool,
+        auth_available: bool,
+    ) -> String {
         let registry = WidgetRegistry::with_builtins();
         let ctx = MarkdownCtx {
             course,
             source: Path::new("01-a.md"),
             lessons_by_file: by_file,
-            widgets: true,
+            widgets,
+            ai_locked,
+            auth_available,
         };
         let mut diags = Vec::new();
         render_markdown(src, &ctx, &registry, &mut diags)
@@ -1062,20 +1134,7 @@ mod tests {
         course: &Course,
         by_file: &std::collections::HashMap<String, String>,
     ) -> String {
-        let registry = WidgetRegistry::with_builtins();
-        let ctx = MarkdownCtx {
-            course,
-            source: Path::new("01-a.md"),
-            lessons_by_file: by_file,
-            widgets: false,
-        };
-        let mut diags = Vec::new();
-        render_markdown(src, &ctx, &registry, &mut diags)
-            .views
-            .into_iter()
-            .map(|v| crate::render::render_html(move || v))
-            .collect::<Vec<_>>()
-            .join("")
+        render_doc_as(src, course, by_file, false, false, false)
     }
 
     #[test]
@@ -1128,7 +1187,10 @@ mod tests {
             &course,
             &by_file,
         );
-        assert!(html.contains("<li><p>first paragraph</p><p>second paragraph</p></li>"), "{html}");
+        assert!(
+            html.contains("<li><p>first paragraph</p><p>second paragraph</p></li>"),
+            "{html}"
+        );
     }
 
     fn tags(chunk: &str) -> Vec<WidgetTag> {
@@ -1171,7 +1233,11 @@ mod tests {
     #[test]
     fn rejects_non_self_closing_tag() {
         let mut diags = Vec::new();
-        let t = scan_widget_tags("<Widget type=\"quiz\" id=\"a.b\">", Path::new("t"), &mut diags);
+        let t = scan_widget_tags(
+            "<Widget type=\"quiz\" id=\"a.b\">",
+            Path::new("t"),
+            &mut diags,
+        );
         assert!(t.is_empty());
         assert_eq!(diags[0].severity, Severity::Error);
     }
@@ -1220,7 +1286,10 @@ mod tests {
         let src = "Use `[[b]]` literally.\n\n```rust\n[[b]] @here\n```\n\nBut [[b]] works.\n";
         let out = expand_note_links(src, &lessons, None);
         assert!(out.contains("`[[b]]`"), "inline code preserved: {out}");
-        assert!(out.contains("```rust\n[[b]] @here\n```"), "fence preserved: {out}");
+        assert!(
+            out.contains("```rust\n[[b]] @here\n```"),
+            "fence preserved: {out}"
+        );
         assert!(out.contains("[B](02-b.md) works"), "prose expanded: {out}");
     }
 
@@ -1241,10 +1310,7 @@ mod tests {
             expand_note_links("no@here match", &lessons, Some(here)),
             "no@here match"
         );
-        assert_eq!(
-            expand_note_links("@herox", &lessons, Some(here)),
-            "@herox"
-        );
+        assert_eq!(expand_note_links("@herox", &lessons, Some(here)), "@herox");
         let no_anchor = NoteHere {
             lesson: "b",
             anchor: None,
@@ -1253,6 +1319,26 @@ mod tests {
         assert_eq!(
             expand_note_links("see @here", &lessons, Some(no_anchor)),
             "see § Set up"
+        );
+    }
+
+    #[test]
+    fn note_links_scan_skips_multibyte_chars() {
+        let lessons = note_lessons();
+        let here = NoteHere {
+            lesson: "b",
+            anchor: Some("setup"),
+            title: Some("Set up"),
+        };
+        // '—' is 3 bytes; a byte-wise scan once panicked slicing inside it.
+        assert_eq!(
+            expand_note_links("a — b — see [[b]] — § — @here.", &lessons, Some(here)),
+            "a — b — see [B](02-b.md) — § — [§ Set up](02-b.md#setup)."
+        );
+        assert_eq!(expand_note_links("—[[b]]", &lessons, None), "—[B](02-b.md)");
+        assert_eq!(
+            expand_note_links("日本語 [[b]] テスト", &lessons, None),
+            "日本語 [B](02-b.md) テスト"
         );
     }
 
@@ -1266,7 +1352,11 @@ mod tests {
     #[test]
     fn plain_mode_renders_widget_tag_as_literal_text() {
         let (_dir, course, by_file) = fixture_course();
-        let html = render_note(r#"note <Widget type="quiz" id="x.y" /> tail"#, &course, &by_file);
+        let html = render_note(
+            r#"note <Widget type="quiz" id="x.y" /> tail"#,
+            &course,
+            &by_file,
+        );
         assert!(html.contains("&lt;Widget"), "escaped: {html}");
         assert!(!html.contains("widget-shell"), "no widget rendered: {html}");
         assert!(html.contains("note"), "{html}");
@@ -1298,8 +1388,14 @@ mod tests {
 
     #[test]
     fn strips_duplicated_h1() {
-        assert_eq!(strip_title_heading("# My Title\n\nBody", "My Title"), "Body");
-        assert_eq!(strip_title_heading("# Other\n\nBody", "My Title"), "# Other\n\nBody");
+        assert_eq!(
+            strip_title_heading("# My Title\n\nBody", "My Title"),
+            "Body"
+        );
+        assert_eq!(
+            strip_title_heading("# Other\n\nBody", "My Title"),
+            "# Other\n\nBody"
+        );
         assert_eq!(strip_title_heading("No heading", "x"), "No heading");
     }
 
@@ -1312,6 +1408,8 @@ mod tests {
             source: src,
             lessons_by_file: &by_file,
             widgets: true,
+            ai_locked: false,
+            auth_available: false,
         };
         let mut empty = Vec::new();
 
@@ -1335,5 +1433,89 @@ mod tests {
             resolve_link("missing.md", &ctx, src, &mut empty),
             LinkResolution::MissingLesson
         ));
+    }
+
+    fn render_locked(
+        src: &str,
+        course: &Course,
+        by_file: &std::collections::HashMap<String, String>,
+        auth_available: bool,
+    ) -> String {
+        render_doc_as(src, course, by_file, true, true, auth_available)
+    }
+
+    #[test]
+    fn ai_widgets_render_locked_for_anonymous() {
+        let (_dir, course, by_file) = fixture_course();
+        let src = r#"Before.
+
+<Widget type="assignment" id="com.example.assign" />
+
+<Widget type="teach" id="com.example.teach" />
+"#;
+        let html = render_locked(src, &course, &by_file, true);
+        assert!(html.contains("widget-assignment"), "{html}");
+        assert!(html.contains("assignment-locked"), "{html}");
+        assert!(html.contains("graded by an AI grader"), "{html}");
+        assert!(html.contains("widget-teach"), "{html}");
+        assert!(html.contains("teach-locked"), "{html}");
+        assert!(html.contains("checks your explanation"), "{html}");
+        // Prompt and hint still show; math stays server-rendered.
+        assert!(html.contains(r#"data-tex="x""#), "{html}");
+        assert!(html.contains("Solve for"), "{html}");
+        // No editor, no submission state.
+        assert!(!html.contains("assignment-input"), "{html}");
+        assert!(!html.contains("teach-input"), "{html}");
+        // Hidden solutions never leak, not even in locked cards.
+        assert!(!html.contains("x = 2"), "{html}");
+        assert!(!html.contains("key point is"), "{html}");
+        assert!(!html.contains("data-config="), "{html}");
+    }
+
+    #[test]
+    fn locked_ai_card_points_back_at_the_lesson() {
+        let (_dir, course, by_file) = fixture_course();
+        let html = render_locked(
+            r#"<Widget type="assignment" id="com.example.assign" />"#,
+            &course,
+            &by_file,
+            true,
+        );
+        let expected = format!(
+            "/account?next=%2Fcourse%2F{}%2Fa",
+            utf8_percent_encode(&course.slug, QUERY_SAFE)
+        );
+        assert!(html.contains(&expected), "{html}");
+    }
+
+    #[test]
+    fn locked_ai_card_omits_sign_in_when_accounts_disabled() {
+        let (_dir, course, by_file) = fixture_course();
+        let html = render_locked(
+            r#"<Widget type="teach" id="com.example.teach" />"#,
+            &course,
+            &by_file,
+            false,
+        );
+        assert!(html.contains("teach-locked"), "{html}");
+        assert!(
+            html.contains("checks your explanation"),
+            "the explanation of what the card does stays: {html}"
+        );
+        assert!(!html.contains("Sign in to use it"), "{html}");
+        assert!(!html.contains("/account?next="), "{html}");
+    }
+
+    #[test]
+    fn locked_ai_widget_missing_config_is_error_card() {
+        let (_dir, course, by_file) = fixture_course();
+        let html = render_locked(
+            r#"<Widget type="assignment" id="com.example.nope" />"#,
+            &course,
+            &by_file,
+            true,
+        );
+        assert!(html.contains("widget-error"), "{html}");
+        assert!(html.contains("com.example.nope"), "{html}");
     }
 }

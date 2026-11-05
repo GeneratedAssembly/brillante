@@ -43,7 +43,13 @@ impl Diagnostic {
 
 impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}] {}: {}", self.severity, self.path.display(), self.message)
+        write!(
+            f,
+            "[{}] {}: {}",
+            self.severity,
+            self.path.display(),
+            self.message
+        )
     }
 }
 

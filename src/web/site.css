@@ -770,6 +770,51 @@ main {
   margin: 6px 0 0;
 }
 
+/* Locked sign-in tabs for account-gated features (notes, tutor, scratch
+   pad): fixed edge tabs in the same spots the real toggles occupy, but
+   muted, inert without JS, and linking to /account?next=<this page>. */
+.feature-locked {
+  position: fixed;
+  right: 0;
+  z-index: 30;
+  writing-mode: vertical-rl;
+  padding: 0.9rem 0.45rem;
+  border-radius: 0.5rem 0 0 0.5rem;
+  background: #64748b;
+  color: #fff;
+  font: 600 0.75rem/1 system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  box-shadow: -2px 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+.feature-locked:hover {
+  filter: brightness(1.08);
+}
+
+.feature-locked:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+}
+
+#scratchpad-toggle.feature-locked {
+  top: 40%;
+}
+
+#notebook-toggle.feature-locked {
+  top: 52%;
+}
+
+#tutor-toggle.feature-locked {
+  top: 64%;
+}
+
+@media print {
+  .feature-locked {
+    display: none !important;
+  }
+}
+
 @media (max-width: 640px) {
   .pager {
     flex-direction: column;

@@ -79,6 +79,16 @@ expression = "1.5 + 0.5 / (x * x)"
 domain = [0.4, 2.0]
 xlabel = "distance x"
 readout = "f({x:0.1f}) = {y:0.3f}"
+
+[widgets."com.example.fixture.assign_mean"]
+label = "Fixture · A1"
+prompt = "For $X_i \\sim \\mathcal{N}(\\theta, 1)$, find the MLE.\n\n$$\\ell(\\theta) = c - \\tfrac{1}{2}\\textstyle\\sum_i (x_i - \\theta)^2$$"
+reference = "The MLE is the sample mean: $\\hat\\theta = \\bar{x}$."
+hint = "Differentiate the log-likelihood."
+
+[widgets."com.example.fixture.teach_mean"]
+prompt = "You're the teacher. Explain what the MLE is and why it is $\\bar{x}$ here."
+key_points = "The likelihood is maximized where the sum of squared deviations is smallest; that point is the sample mean $\\bar{x}$."
 "##;
 
 const LESSON_WELCOME: &str = r#"---
@@ -180,6 +190,30 @@ section: extras
 <Widget type="resource-link" id="com.example.fixture.link_mit" />
 "#;
 
+const LESSON_ASSIGNMENT: &str = r#"---
+title: Assignment
+description: The seventh fixture lesson.
+order: 7
+section: extras
+---
+
+<Widget type="assignment" id="com.example.fixture.assign_mean" />
+
+<Widget type="assignment" id="com.example.fixture.assign_missing" />
+"#;
+
+const LESSON_TEACH: &str = r#"---
+title: Be the teacher
+description: The eighth fixture lesson.
+order: 8
+section: extras
+---
+
+<Widget type="teach" id="com.example.fixture.teach_mean" />
+
+<Widget type="teach" id="com.example.fixture.teach_missing" />
+"#;
+
 const LOGO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="6" fill="#0ea5e9"/></svg>
 "##;
 
@@ -211,6 +245,8 @@ fn build_fixture(pocketbase: Option<brillante::config::PocketBaseConfig>) -> Fix
     fs::write(course.join("04-plots.md"), LESSON_PLOTS).unwrap();
     fs::write(course.join("05-ack.md"), LESSON_ACK).unwrap();
     fs::write(course.join("06-resources.md"), LESSON_RESOURCES).unwrap();
+    fs::write(course.join("07-assignment.md"), LESSON_ASSIGNMENT).unwrap();
+    fs::write(course.join("08-teach.md"), LESSON_TEACH).unwrap();
     fs::write(course.join("images/logo.svg"), LOGO_SVG).unwrap();
 
     let config = AppConfig {
@@ -238,10 +274,7 @@ async fn get(router: &axum::Router, path: &str) -> (StatusCode, String) {
 }
 
 /// GET that keeps the response metadata: (status, Location, Set-Cookie list).
-async fn get_redirect(
-    router: &axum::Router,
-    path: &str,
-) -> (StatusCode, String, Vec<String>) {
+async fn get_redirect(router: &axum::Router, path: &str) -> (StatusCode, String, Vec<String>) {
     let response = router
         .clone()
         .oneshot(Request::get(path).body(Body::empty()).unwrap())
@@ -314,7 +347,7 @@ async fn home_lists_registered_courses() {
     let (status, body) = get(&f.router, "/").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("Fixture Course"));
-    assert!(body.contains("6 lessons"));
+    assert!(body.contains("8 lessons"));
     assert!(body.contains("/course/fixture-course"));
 }
 
@@ -342,7 +375,10 @@ async fn course_page_groups_sections() {
     // ungrouped lesson (Plots) renders before any section heading
     let plots = body.find("Plots and links").unwrap();
     let first_section = body.find("Getting started").unwrap();
-    assert!(plots < first_section, "ungrouped lessons render before sections");
+    assert!(
+        plots < first_section,
+        "ungrouped lessons render before sections"
+    );
     // global numbering continues across groups: Acknowledgment is lesson 5
     let ack = body.find(r#"data-lesson="ack""#).unwrap();
     assert!(body[ack..].contains("<span class=\"lesson-num\">5</span>"));
@@ -356,7 +392,10 @@ async fn acknowledge_banner_and_widget_render() {
     let (_, body) = get(&f.router, "/course/fixture-course").await;
     assert!(body.contains("ack-banner"));
     assert!(body.contains("com.example.fixture.ack_policy"));
-    assert!(body.contains(r#"data-ack-href="/course/fixture-course/ack""#) || body.contains(r#"href="/course/fixture-course/ack""#));
+    assert!(
+        body.contains(r#"data-ack-href="/course/fixture-course/ack""#)
+            || body.contains(r#"href="/course/fixture-course/ack""#)
+    );
     assert!(body.contains("Read &amp; acknowledge") || body.contains("Read & acknowledge"));
 
     let (_, body) = get(&f.router, "/course/fixture-course/ack").await;
@@ -472,17 +511,33 @@ async fn site_assets_served() {
 }
 
 #[tokio::test]
-async fn scratchpad_renders_on_course_pages_only() {
+async fn scratchpad_needs_a_signed_in_viewer() {
+    // No accounts on this server: the feature is simply not offered.
     let f = fixture();
-    let (_, body) = get(&f.router, "/course/fixture-course/welcome").await;
-    assert!(body.contains(r#"id="scratchpad""#));
-    assert!(body.contains("scratchpad-toggle"));
-    assert!(body.contains("/assets/scratchpad.js"));
-    assert!(body.contains("/assets/scratchpad.css"));
+    for path in ["/course/fixture-course/welcome", "/course/fixture-course"] {
+        let (_, body) = get(&f.router, path).await;
+        assert!(!body.contains(r#"id="scratchpad""#), "{path}: {body}");
+        assert!(!body.contains("feature-locked"), "{path}: {body}");
+        assert!(!body.contains("/assets/scratchpad.js"), "{path}: {body}");
+    }
 
-    let (_, body) = get(&f.router, "/course/fixture-course").await;
-    assert!(body.contains(r#"id="scratchpad""#));
-    assert!(body.contains("/assets/scratchpad.js"));
+    // Accounts exist but the visitor is signed out: a locked sign-in tab
+    // names the feature and returns here after sign-in; no drawer, no JS.
+    let f = fixture_with_auth();
+    for path in ["/course/fixture-course/welcome", "/course/fixture-course"] {
+        let (_, body) = get(&f.router, path).await;
+        assert!(!body.contains(r#"id="scratchpad""#), "{path}: {body}");
+        assert!(
+            body.contains(r#"id="scratchpad-toggle""#) && body.contains("feature-locked"),
+            "{path}: {body}"
+        );
+        assert!(!body.contains("/assets/scratchpad.js"), "{path}: {body}");
+    }
+    let (_, body) = get(&f.router, "/course/fixture-course/welcome").await;
+    assert!(
+        body.contains("next=%2Fcourse%2Ffixture-course%2Fwelcome"),
+        "{body}"
+    );
 
     let (_, body) = get(&f.router, "/").await;
     assert!(!body.contains(r#"id="scratchpad""#));
@@ -508,24 +563,32 @@ async fn scratchpad_assets_served() {
 }
 
 #[tokio::test]
-async fn admin_endpoints_work() {
+async fn admin_endpoints_require_admin() {
+    // No accounts: both utility endpoints answer 404 like every admin page.
     let f = fixture();
     let (status, _) = get(&f.router, "/healthz").await;
     assert_eq!(status, StatusCode::OK);
     let response = f
         .router
         .clone()
-        .oneshot(
-            Request::post("/admin/reload")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::post("/admin/reload").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let (status, body) = get(&f.router, "/admin/diagnostics").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(!body.is_empty());
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let (status, _) = get(&f.router, "/admin/diagnostics").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Accounts exist but PB is unreachable: unresolvable viewer, still 404.
+    let f = fixture_with_auth();
+    let response = f
+        .router
+        .clone()
+        .oneshot(Request::post("/admin/reload").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let (status, _) = get(&f.router, "/admin/diagnostics").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -559,8 +622,14 @@ async fn tight_lists_keep_inline_elements_in_one_paragraph() {
         body.contains("<li><p>see <a href=\"https://example.com/docs\""),
         "autolinks must stay inside the item's paragraph"
     );
-    assert!(!body.contains("</strong><p>"), "inline tags must not start a new <p>");
-    assert!(!body.contains("</p><a"), "links must not sit between two <p>s");
+    assert!(
+        !body.contains("</strong><p>"),
+        "inline tags must not start a new <p>"
+    );
+    assert!(
+        !body.contains("</p><a"),
+        "links must not sit between two <p>s"
+    );
 }
 
 #[tokio::test]
@@ -572,7 +641,10 @@ async fn slider_renders_computed_readout() {
         "the slider must render the evaluated readout at its initial value"
     );
     assert!(body.contains("readoutAst"));
-    assert!(!body.contains("(650/x)^4"), "the client must not receive the source expression");
+    assert!(
+        !body.contains("(650/x)^4"),
+        "the client must not receive the source expression"
+    );
 }
 
 #[tokio::test]
@@ -630,8 +702,13 @@ async fn progress_api_requires_authentication() {
     let f = fixture_with_auth();
     let (status, _) = get(&f.router, "/api/progress").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let status =
-        post_json_with_cookie(&f.router, "/api/progress", r#"{"course":"a","lesson":"b","done":true}"#, "").await;
+    let status = post_json_with_cookie(
+        &f.router,
+        "/api/progress",
+        r#"{"course":"a","lesson":"b","done":true}"#,
+        "",
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
@@ -676,11 +753,8 @@ async fn oauth_start_degrades_when_pocketbase_unreachable() {
 #[tokio::test]
 async fn oauth_callback_without_flow_cookie_redirects_expired() {
     let f = fixture();
-    let (status, location, cookies) = get_redirect(
-        &f.router,
-        "/auth/oauth/google/callback?code=abc&state=def",
-    )
-    .await;
+    let (status, location, cookies) =
+        get_redirect(&f.router, "/auth/oauth/google/callback?code=abc&state=def").await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(location, "/account?error=oauth_state");
     assert!(
@@ -712,8 +786,14 @@ async fn catalog_without_accounts_has_no_subscribe_ui() {
     let f = fixture();
     let (_, body) = get(&f.router, "/").await;
     assert!(body.contains("Fixture Course"));
-    assert!(!body.contains("/my/subscriptions"), "no form posts without accounts");
-    assert!(!body.contains("My courses"), "no my-courses section without accounts");
+    assert!(
+        !body.contains("/my/subscriptions"),
+        "no form posts without accounts"
+    );
+    assert!(
+        !body.contains("My courses"),
+        "no my-courses section without accounts"
+    );
     // Courses with no access record stay public by default.
     let (status, _) = get(&f.router, "/course/fixture-course").await;
     assert_eq!(status, StatusCode::OK);
@@ -745,7 +825,10 @@ async fn subscriptions_require_sign_in() {
 async fn catalog_degrades_to_anonymous_when_pb_unreachable() {
     let f = fixture_with_auth();
     let (_, body) = get(&f.router, "/").await;
-    assert!(body.contains("Fixture Course"), "no access record means public");
+    assert!(
+        body.contains("Fixture Course"),
+        "no access record means public"
+    );
     assert!(
         !body.contains("/my/subscriptions"),
         "an unresolvable viewer must not see subscribe controls"
@@ -760,13 +843,16 @@ async fn browse_lists_courses_with_nav_links() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("Browse courses"));
     assert!(body.contains("Fixture Course"));
-    assert!(body.contains("6 lessons"));
+    assert!(body.contains("8 lessons"));
     assert!(body.contains("/course/fixture-course"));
     // topbar navigation on every page
     assert!(body.contains(r#"<a href="/">Home</a>"#));
     assert!(body.contains(r#"<a href="/browse">Browse</a>"#));
     let (_, lesson) = get(&f.router, "/course/fixture-course/widgets").await;
-    assert!(lesson.contains(r#"<a href="/browse">Browse</a>"#), "nav on lesson pages");
+    assert!(
+        lesson.contains(r#"<a href="/browse">Browse</a>"#),
+        "nav on lesson pages"
+    );
     assert!(lesson.contains(r#"class="crumb""#));
     let (_, not_found) = get(&f.router, "/nope").await;
     assert!(not_found.contains("Browse all courses"));
@@ -787,7 +873,10 @@ async fn browse_without_accounts_has_no_subscribe_ui() {
 async fn browse_degrades_to_anonymous_when_pb_unreachable() {
     let f = fixture_with_auth();
     let (_, body) = get(&f.router, "/browse").await;
-    assert!(body.contains("Fixture Course"), "no access record means public");
+    assert!(
+        body.contains("Fixture Course"),
+        "no access record means public"
+    );
     assert!(
         !body.contains("/my/subscriptions"),
         "an unresolvable viewer must not see subscribe controls"
@@ -800,7 +889,10 @@ async fn browse_search_matches_courses_and_lessons() {
     let (status, body) = get(&f.router, "/browse?q=widgets").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("1 course(s) match"), "summary counts courses");
-    assert!(body.contains("/course/fixture-course/widgets"), "lesson deep link");
+    assert!(
+        body.contains("/course/fixture-course/widgets"),
+        "lesson deep link"
+    );
     assert!(body.contains("class=\"search-lessons\""));
     assert!(body.contains("Fixture Course"), "matched course card");
     assert!(
@@ -858,11 +950,22 @@ async fn post_form_redirect(router: &axum::Router, path: &str, body: &str) -> (S
 async fn notebook_surfaces_need_accounts() {
     let f = fixture();
     let (status, _) = get(&f.router, "/notes/fixture-course").await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "no accounts means no notebooks");
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "no accounts means no notebooks"
+    );
     let (status, _) = get(&f.router, "/course/fixture-course/welcome").await;
     assert_eq!(status, StatusCode::OK);
     let (_, lesson) = get(&f.router, "/course/fixture-course/welcome").await;
-    assert!(!lesson.contains("id=\"notebook\""), "no drawer without accounts");
+    assert!(
+        !lesson.contains("id=\"notebook\""),
+        "no drawer without accounts"
+    );
+    assert!(
+        !lesson.contains("feature-locked"),
+        "no locked tab when there is no account to sign in to: {lesson}"
+    );
     let (status, _) = post_form(
         &f.router,
         "/notes/fixture-course/welcome",
@@ -880,6 +983,22 @@ async fn notebook_degrades_when_pb_unreachable() {
         !lesson.contains("id=\"notebook\""),
         "unresolvable viewer (PB down) renders no drawer"
     );
+    // Accounts exist, so the signed-out visitor still gets the locked tab
+    // pointing at sign-in; the drawer itself never renders.
+    assert!(
+        lesson.contains(r#"id="notebook-toggle""#) && lesson.contains("feature-locked"),
+        "{lesson}"
+    );
+    assert!(
+        lesson.contains("next=%2Fcourse%2Ffixture-course%2Fwelcome"),
+        "{lesson}"
+    );
+    // The tutor is not configured on this server: no tutor tab, locked or
+    // otherwise.
+    assert!(
+        !lesson.contains(r#"id="tutor-toggle""#),
+        "no tutor tab when the tutor is unconfigured: {lesson}"
+    );
     let (status, _) = get(&f.router, "/notes/fixture-course").await;
     assert_eq!(status, StatusCode::SEE_OTHER, "index redirects to sign-in");
 }
@@ -887,18 +1006,17 @@ async fn notebook_degrades_when_pb_unreachable() {
 #[tokio::test]
 async fn admin_delete_requires_admin() {
     let f = fixture();
-    let (status, _) = post_form(
-        &f.router,
-        "/admin/users/delete",
-        "user_id=abc&confirm=on",
-    )
-    .await;
+    let (status, _) = post_form(&f.router, "/admin/users/delete", "user_id=abc&confirm=on").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _) = get(&f.router, "/admin").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let f = fixture_with_auth();
     let (status, _) = get(&f.router, "/admin").await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "unreachable PB degrades to no admin");
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "unreachable PB degrades to no admin"
+    );
     let (status, _) = post_form(&f.router, "/admin/users/delete", "user_id=abc&confirm=on").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -907,7 +1025,10 @@ async fn admin_delete_requires_admin() {
 async fn tutor_is_inert_without_configuration() {
     let f = fixture();
     let (_, lesson) = get(&f.router, "/course/fixture-course/welcome").await;
-    assert!(!lesson.contains("id=\"tutor\""), "no drawer without accounts");
+    assert!(
+        !lesson.contains("id=\"tutor\""),
+        "no drawer without accounts"
+    );
     let (status, _) = get(&f.router, "/admin/tutor").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, body) = post_json(
@@ -948,4 +1069,252 @@ async fn post_json(router: &axum::Router, path: &str, body: &str) -> (StatusCode
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     (status, String::from_utf8_lossy(&bytes).into_owned())
+}
+
+#[tokio::test]
+async fn assignment_widget_renders_locked_for_anonymous() {
+    let f = fixture();
+    let (status, body) = get(&f.router, "/course/fixture-course/assignment").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("data-widget-type=\"assignment\""), "{body}");
+    // The locked card still shows what the assignment asks.
+    assert!(body.contains("assignment-locked"), "{body}");
+    assert!(body.contains("assignment-hint"), "{body}");
+    assert!(body.contains("Fixture · A1"), "{body}");
+    assert!(body.contains("graded by an AI grader"), "{body}");
+    // The prompt's math is server-rendered to data-tex elements.
+    assert!(body.contains("math-display"), "{body}");
+    // No editor, no submission UI: the feature is off limits signed out,
+    // and this server has no accounts to sign into.
+    assert!(!body.contains("assignment-input"), "{body}");
+    assert!(!body.contains("assignment-submit"), "{body}");
+    assert!(!body.contains("Sign in to use it"), "{body}");
+    // The hidden reference never appears in the page.
+    assert!(!body.contains("sample mean"), "{body}");
+    assert!(!body.contains("hat\\\\theta = \\\\bar"), "{body}");
+    // Math assets load because the widget emits data-tex elements.
+    assert!(body.contains("/widgets/math/script.js"), "{body}");
+    assert!(body.contains("/widgets/assignment/style.css"), "{body}");
+}
+
+#[tokio::test]
+async fn assignment_locked_card_offers_sign_in_when_accounts_exist() {
+    let f = fixture_with_auth();
+    let (_, body) = get(&f.router, "/course/fixture-course/assignment").await;
+    assert!(body.contains("assignment-locked"), "{body}");
+    assert!(body.contains("Sign in to use it"), "{body}");
+    assert!(
+        body.contains("next=%2Fcourse%2Ffixture-course%2Fassignment"),
+        "{body}"
+    );
+    assert!(!body.contains("assignment-input"), "{body}");
+    // The hidden reference stays hidden.
+    assert!(!body.contains("sample mean"), "{body}");
+}
+
+#[tokio::test]
+async fn assignment_missing_config_is_an_error_card() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/course/fixture-course/assignment").await;
+    assert!(body.contains("widget-error"), "{body}");
+    assert!(
+        body.contains("com.example.fixture.assign_missing"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn assignment_preview_renders_markdown() {
+    let f = fixture();
+    let (status, body) = post_json(
+        &f.router,
+        "/api/assignment/preview",
+        r#"{"course":"fixture-course","lesson":"assignment","body":"**bold** and $x^2$"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let html = json["html"].as_str().unwrap_or_default();
+    assert!(html.contains("<strong>bold</strong>"), "{html}");
+    assert!(html.contains("data-tex=\"x^2\""), "{html}");
+
+    let (status, _) = post_json(
+        &f.router,
+        "/api/assignment/preview",
+        r#"{"course":"nope","lesson":"assignment","body":"x"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn assignment_grade_requires_accounts() {
+    let f = fixture();
+    let (status, _) = post_json(
+        &f.router,
+        "/api/assignment/grade",
+        r#"{"course":"fixture-course","lesson":"assignment","widget":"com.example.fixture.assign_mean","answer":"the sample mean"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "no pb means no grading");
+    let (status, _) = get(
+        &f.router,
+        "/api/assignment/submission?course=fixture-course&lesson=assignment&widget=com.example.fixture.assign_mean",
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn assignment_grade_gates_before_grader_configuration() {
+    let f = fixture_with_auth();
+    // Grader not configured (unreachable PB): same inert posture as the tutor.
+    let (status, _) = post_json(
+        &f.router,
+        "/api/assignment/grade",
+        r#"{"course":"fixture-course","lesson":"assignment","widget":"com.example.fixture.assign_mean","answer":"the sample mean"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = post_json(
+        &f.router,
+        "/api/assignment/grade",
+        r#"{"course":"fixture-course","lesson":"assignment","widget":"bad id!","answer":"x"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "malformed widget id");
+    let (status, _) = get(
+        &f.router,
+        "/api/assignment/submission?course=fixture-course&lesson=assignment&widget=com.example.fixture.assign_mean",
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "anonymous submission fetch"
+    );
+}
+
+#[tokio::test]
+async fn teach_widget_renders_locked_for_anonymous() {
+    let f = fixture();
+    let (status, body) = get(&f.router, "/course/fixture-course/teach").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("data-widget-type=\"teach\""), "{body}");
+    assert!(body.contains("teach-locked"), "{body}");
+    assert!(body.contains("Be the teacher"), "{body}");
+    assert!(body.contains("checks your explanation"), "{body}");
+    // The prompt's math is server-rendered to data-tex elements, and the
+    // math assets are pulled in for it.
+    assert!(body.contains(r#"data-tex="\bar{x}""#), "{body}");
+    assert!(body.contains("/widgets/math/script.js"), "{body}");
+    assert!(body.contains("/widgets/teach/style.css"), "{body}");
+    // No editor for signed-out visitors, and no accounts exist to sign in to.
+    assert!(!body.contains("teach-input"), "{body}");
+    assert!(!body.contains("teach-submit"), "{body}");
+    assert!(!body.contains("Sign in to use it"), "{body}");
+    // The hidden key points never appear in the page.
+    assert!(!body.contains("likelihood is maximized"), "{body}");
+    assert!(!body.contains("data-config="), "{body}");
+}
+
+#[tokio::test]
+async fn teach_locked_card_offers_sign_in_when_accounts_exist() {
+    let f = fixture_with_auth();
+    let (_, body) = get(&f.router, "/course/fixture-course/teach").await;
+    assert!(body.contains("teach-locked"), "{body}");
+    assert!(body.contains("Sign in to use it"), "{body}");
+    assert!(
+        body.contains("next=%2Fcourse%2Ffixture-course%2Fteach"),
+        "{body}"
+    );
+    assert!(!body.contains("teach-input"), "{body}");
+    assert!(!body.contains("likelihood is maximized"), "{body}");
+}
+
+#[tokio::test]
+async fn teach_missing_config_is_an_error_card() {
+    let f = fixture();
+    let (_, body) = get(&f.router, "/course/fixture-course/teach").await;
+    assert!(body.contains("widget-error"), "{body}");
+    assert!(body.contains("com.example.fixture.teach_missing"), "{body}");
+}
+
+#[tokio::test]
+async fn teach_preview_renders_markdown() {
+    let f = fixture();
+    let (status, body) = post_json(
+        &f.router,
+        "/api/teach/preview",
+        r#"{"course":"fixture-course","lesson":"teach","body":"**bold** and $x^2$"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let html = json["html"].as_str().unwrap();
+    assert!(html.contains("<strong>bold</strong>"), "{html}");
+    assert!(html.contains("data-tex=\"x^2\""), "{html}");
+
+    let (status, _) = post_json(
+        &f.router,
+        "/api/teach/preview",
+        r#"{"course":"nope","lesson":"teach","body":"x"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn teach_grade_requires_accounts() {
+    let f = fixture();
+    let (status, _) = post_json(
+        &f.router,
+        "/api/teach/grade",
+        r#"{"course":"fixture-course","lesson":"teach","widget":"com.example.fixture.teach_mean","explanation":"the sample mean is the MLE"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "no pb means no grading");
+    let (status, _) = get(
+        &f.router,
+        "/api/teach/submission?course=fixture-course&lesson=teach&widget=com.example.fixture.teach_mean",
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn teach_grade_gates_before_grader_configuration() {
+    let f = fixture_with_auth();
+    // Grader not configured (unreachable PB): same inert posture as the tutor.
+    let (status, _) = post_json(
+        &f.router,
+        "/api/teach/grade",
+        r#"{"course":"fixture-course","lesson":"teach","widget":"com.example.fixture.teach_mean","explanation":"the sample mean is the MLE"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = post_json(
+        &f.router,
+        "/api/teach/grade",
+        r#"{"course":"fixture-course","lesson":"teach","widget":"bad id!","explanation":"x"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "malformed widget id");
+    let (status, _) = post_json(
+        &f.router,
+        "/api/teach/grade",
+        r#"{"course":"fixture-course","lesson":"teach","widget":"com.example.fixture.teach_mean","explanation":"  "}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "empty explanation");
+    let (status, _) = get(
+        &f.router,
+        "/api/teach/submission?course=fixture-course&lesson=teach&widget=com.example.fixture.teach_mean",
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "anonymous submission fetch"
+    );
 }

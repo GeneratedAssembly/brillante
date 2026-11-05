@@ -142,7 +142,8 @@ pub fn slugify(input: &str) -> String {
 
 fn is_valid_slug(s: &str) -> bool {
     !s.is_empty()
-        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && !s.starts_with('-')
         && !s.ends_with('-')
 }
@@ -181,9 +182,15 @@ pub fn load_course_dir(dir: &Path, diags: &mut Vec<Diagnostic>) -> Option<Course
         match std::fs::read_to_string(&course_toml) {
             Ok(raw) => match toml::from_str::<CourseMeta>(&raw) {
                 Ok(m) => meta = m,
-                Err(e) => diags.push(Diagnostic::error(&course_toml, format!("invalid course.toml: {e}"))),
+                Err(e) => diags.push(Diagnostic::error(
+                    &course_toml,
+                    format!("invalid course.toml: {e}"),
+                )),
             },
-            Err(e) => diags.push(Diagnostic::error(&course_toml, format!("cannot read course.toml: {e}"))),
+            Err(e) => diags.push(Diagnostic::error(
+                &course_toml,
+                format!("cannot read course.toml: {e}"),
+            )),
         }
     }
 
@@ -201,9 +208,15 @@ pub fn load_course_dir(dir: &Path, diags: &mut Vec<Diagnostic>) -> Option<Course
                     }
                     widget_config = Some(t);
                 }
-                Err(e) => diags.push(Diagnostic::error(&config_toml, format!("invalid config.toml: {e}"))),
+                Err(e) => diags.push(Diagnostic::error(
+                    &config_toml,
+                    format!("invalid config.toml: {e}"),
+                )),
             },
-            Err(e) => diags.push(Diagnostic::error(&config_toml, format!("cannot read config.toml: {e}"))),
+            Err(e) => diags.push(Diagnostic::error(
+                &config_toml,
+                format!("cannot read config.toml: {e}"),
+            )),
         }
     }
 
@@ -225,7 +238,10 @@ pub fn load_course_dir(dir: &Path, diags: &mut Vec<Diagnostic>) -> Option<Course
     });
 
     if md_files.is_empty() {
-        diags.push(Diagnostic::warning(dir, "course directory contains no markdown lessons"));
+        diags.push(Diagnostic::warning(
+            dir,
+            "course directory contains no markdown lessons",
+        ));
     }
 
     let dir_title = fallback_title(&file_name(dir));
@@ -294,7 +310,10 @@ pub fn load_course_dir(dir: &Path, diags: &mut Vec<Diagnostic>) -> Option<Course
         };
         let base_slug = slugify(&base_input);
         if !is_valid_slug(&base_slug) {
-            diags.push(Diagnostic::warning(file, format!("slug '{base_slug}' is not URL-safe")));
+            diags.push(Diagnostic::warning(
+                file,
+                format!("slug '{base_slug}' is not URL-safe"),
+            ));
         }
         let mut slug = base_slug.clone();
         let mut n = 2;
@@ -474,9 +493,21 @@ mod tests {
             "title = \"T\"\ndescription = \"D\"\naccent = \"#123abc\"",
         )
         .unwrap();
-        fs::write(dir.path().join("a.md"), "---\ntitle: Same\norder: 2\n---\nbody").unwrap();
-        fs::write(dir.path().join("b.md"), "---\ntitle: Same\norder: 1\n---\nbody").unwrap();
-        fs::write(dir.path().join("c-draft.md"), "---\ntitle: X\ndraft: true\n---\n").unwrap();
+        fs::write(
+            dir.path().join("a.md"),
+            "---\ntitle: Same\norder: 2\n---\nbody",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("b.md"),
+            "---\ntitle: Same\norder: 1\n---\nbody",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("c-draft.md"),
+            "---\ntitle: X\ndraft: true\n---\n",
+        )
+        .unwrap();
 
         let mut diags = Vec::new();
         let course = load_course_dir(dir.path(), &mut diags).unwrap();
@@ -493,7 +524,11 @@ mod tests {
     fn duplicate_slugs_get_suffixed() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("x.md"), "---\ntitle: One\n---\n").unwrap();
-        fs::write(dir.path().join("x-copy.md"), "---\ntitle: Two\nslug: x\n---\n").unwrap();
+        fs::write(
+            dir.path().join("x-copy.md"),
+            "---\ntitle: Two\nslug: x\n---\n",
+        )
+        .unwrap();
         let mut diags = Vec::new();
         let course = load_course_dir(dir.path(), &mut diags).unwrap();
         let slugs: Vec<&str> = course.lessons.iter().map(|l| l.slug.as_str()).collect();
@@ -548,10 +583,22 @@ mod tests {
             "[[sections]]\ntitle = \"Rays\"\nslug = \"rays\"\n\n[[sections]]\ntitle = \"Waves\"",
         )
         .unwrap();
-        fs::write(dir.path().join("01-a.md"), "---\ntitle: A\nsection: waves\n---\n").unwrap();
-        fs::write(dir.path().join("02-b.md"), "---\ntitle: B\nsection: rays\n---\n").unwrap();
+        fs::write(
+            dir.path().join("01-a.md"),
+            "---\ntitle: A\nsection: waves\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("02-b.md"),
+            "---\ntitle: B\nsection: rays\n---\n",
+        )
+        .unwrap();
         fs::write(dir.path().join("03-c.md"), "---\ntitle: C\n---\n").unwrap();
-        fs::write(dir.path().join("04-d.md"), "---\ntitle: D\nsection: rays\n---\n").unwrap();
+        fs::write(
+            dir.path().join("04-d.md"),
+            "---\ntitle: D\nsection: rays\n---\n",
+        )
+        .unwrap();
         let mut diags = Vec::new();
         let course = load_course_dir(dir.path(), &mut diags).unwrap();
         assert_eq!(course.sections.len(), 2);
@@ -561,16 +608,28 @@ mod tests {
         assert_eq!(groups.len(), 3);
         assert!(groups[0].0.is_none());
         assert_eq!(
-            groups[0].1.iter().map(|l| l.slug.as_str()).collect::<Vec<_>>(),
+            groups[0]
+                .1
+                .iter()
+                .map(|l| l.slug.as_str())
+                .collect::<Vec<_>>(),
             vec!["c"]
         );
         assert_eq!(groups[1].0.unwrap().slug, "rays");
         assert_eq!(
-            groups[1].1.iter().map(|l| l.slug.as_str()).collect::<Vec<_>>(),
+            groups[1]
+                .1
+                .iter()
+                .map(|l| l.slug.as_str())
+                .collect::<Vec<_>>(),
             vec!["b", "d"]
         );
         assert_eq!(
-            groups[2].1.iter().map(|l| l.slug.as_str()).collect::<Vec<_>>(),
+            groups[2]
+                .1
+                .iter()
+                .map(|l| l.slug.as_str())
+                .collect::<Vec<_>>(),
             vec!["a"]
         );
         assert!(!diags.iter().any(|d| d.message.contains("has no lessons")));
@@ -585,12 +644,20 @@ mod tests {
             "[[sections]]\ntitle = \"Rays\"\n\n[[sections]]\ntitle = \"Rays\"\nslug = \"RAYS!\"",
         )
         .unwrap();
-        fs::write(dir.path().join("a.md"), "---\ntitle: A\nsection: rays\n---\n").unwrap();
+        fs::write(
+            dir.path().join("a.md"),
+            "---\ntitle: A\nsection: rays\n---\n",
+        )
+        .unwrap();
         let mut diags = Vec::new();
         let course = load_course_dir(dir.path(), &mut diags).unwrap();
         assert_eq!(course.sections[0].slug, "rays");
         assert_eq!(course.sections[1].slug, "rays-2");
-        assert!(diags.iter().any(|d| d.message.contains("duplicate section slug")));
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("duplicate section slug"))
+        );
         // the first declared section still owns the bare slug
         assert!(course.lessons[0].section.as_deref() == Some("rays"));
     }
@@ -603,7 +670,11 @@ mod tests {
             "[[sections]]\ntitle = \"Rays\"\nslug = \"rays\"",
         )
         .unwrap();
-        fs::write(dir.path().join("a.md"), "---\ntitle: A\nsection: nope\n---\n").unwrap();
+        fs::write(
+            dir.path().join("a.md"),
+            "---\ntitle: A\nsection: nope\n---\n",
+        )
+        .unwrap();
         let mut diags = Vec::new();
         let course = load_course_dir(dir.path(), &mut diags).unwrap();
         assert!(course.lessons[0].section.is_none());
@@ -614,7 +685,11 @@ mod tests {
     #[test]
     fn titleless_section_is_dropped() {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("course.toml"), "[[sections]]\ndescription = \"d\"").unwrap();
+        fs::write(
+            dir.path().join("course.toml"),
+            "[[sections]]\ndescription = \"d\"",
+        )
+        .unwrap();
         fs::write(dir.path().join("a.md"), "---\ntitle: A\n---\n").unwrap();
         let mut diags = Vec::new();
         let course = load_course_dir(dir.path(), &mut diags).unwrap();

@@ -1,11 +1,20 @@
 use leptos::prelude::*;
 
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
-fn panel(w: &WidgetInstance, key: &str, fallback_title: &str, css_class: &str) -> Result<AnyView, WidgetError> {
+fn panel(
+    w: &WidgetInstance,
+    key: &str,
+    fallback_title: &str,
+    css_class: &str,
+) -> Result<AnyView, WidgetError> {
     let title = w
         .opt_table(key)?
-        .and_then(|t| t.get("title").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .and_then(|t| {
+            t.get("title")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .unwrap_or_else(|| fallback_title.to_string());
     let mut lines: Vec<String> = Vec::new();
     let mut note: Option<String> = None;
@@ -19,7 +28,7 @@ fn panel(w: &WidgetInstance, key: &str, fallback_title: &str, css_class: &str) -
                         _ => {
                             return Err(WidgetError::Invalid(format!(
                                 "{key}.tex entries must all be strings"
-                            )))
+                            )));
                         }
                     }
                 }
@@ -27,12 +36,12 @@ fn panel(w: &WidgetInstance, key: &str, fallback_title: &str, css_class: &str) -
             Some(_) => {
                 return Err(WidgetError::Invalid(format!(
                     "{key}.tex must be a string or an array of strings"
-                )))
+                )));
             }
             None => {
                 return Err(WidgetError::Invalid(format!(
                     "missing required config key '{key}.tex'"
-                )))
+                )));
             }
         }
         note = table
@@ -69,5 +78,10 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
         <div class="compare-cols">{left} {right}</div>
     };
 
-    Ok(widget_shell("compare", &w.id, serialize_config(w.config.as_ref()), inner.into_any()))
+    Ok(widget_shell(
+        "compare",
+        &w.id,
+        serialize_config(w.config.as_ref()),
+        inner.into_any(),
+    ))
 }

@@ -9,10 +9,10 @@ use leptos::prelude::*;
 
 use crate::content::course::{Course, Lesson};
 use crate::content::markdown::{self, MarkdownCtx};
+use crate::pb::{PbError, PocketBase, TutorSettings};
 use crate::render::render_html;
-use crate::pb::{PocketBase, PbError, TutorSettings};
-use crate::web::access;
 use crate::web::AppState;
+use crate::web::access;
 
 const CACHE_TTL: Duration = Duration::from_secs(30);
 const CONTEXT_CHAR_LIMIT: usize = 12_000;
@@ -82,7 +82,10 @@ impl TutorState {
     async fn api_key(&self, pb: &PocketBase) -> Result<Option<String>, PbError> {
         {
             let cached = self.inner.read().await;
-            if cached.key_fetched_at.is_some_and(|t| t.elapsed() < CACHE_TTL) {
+            if cached
+                .key_fetched_at
+                .is_some_and(|t| t.elapsed() < CACHE_TTL)
+            {
                 return Ok(cached.api_key.clone());
             }
         }
@@ -185,11 +188,7 @@ pub async fn chat(
     axum::Json(req): axum::Json<ChatRequest>,
 ) -> Response {
     let reject = |status: StatusCode, msg: &str| {
-        (
-            status,
-            axum::Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response()
+        (status, axum::Json(serde_json::json!({ "error": msg }))).into_response()
     };
     let unavailable = || reject(StatusCode::NOT_FOUND, "the tutor is not available");
     let Some(pb) = state.pb.as_ref() else {
@@ -231,7 +230,10 @@ pub async fn chat(
         );
     };
 
-    let url = format!("{}/chat/completions", settings.base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/chat/completions",
+        settings.base_url.trim_end_matches('/')
+    );
     let mut messages = vec![serde_json::json!({
         "role": "system",
         "content": build_system_prompt(course, lesson),
@@ -257,10 +259,7 @@ pub async fn chat(
             let status = resp.status();
             if !status.is_success() {
                 let text = resp.text().await.unwrap_or_default();
-                tracing::warn!(
-                    "tutor upstream {status}: {}",
-                    truncate_chars(&text, 400)
-                );
+                tracing::warn!("tutor upstream {status}: {}", truncate_chars(&text, 400));
                 return reject(
                     StatusCode::BAD_GATEWAY,
                     "the tutor service returned an error",
@@ -316,6 +315,12 @@ pub(crate) fn normalize_math_delimiters(src: &str) -> String {
     let mut last = 0usize;
     let mut i = 0usize;
     while i < src.len() {
+        // Byte-wise scanning can land inside a multi-byte character; skip to
+        // the next boundary before slicing, or `src[i..]` would panic.
+        if !src.is_char_boundary(i) {
+            i += 1;
+            continue;
+        }
         if spans.iter().any(|(s, e)| i >= *s && i < *e) {
             i += 1;
             continue;
@@ -369,6 +374,8 @@ pub(crate) fn render_reply(
         source: std::path::Path::new(&lesson.file_name),
         lessons_by_file: &by_file,
         widgets: false,
+        ai_locked: false,
+        auth_available: false,
     };
     let mut diags = Vec::new();
     let text = normalize_math_delimiters(text);
@@ -494,7 +501,11 @@ mod tests {
     #[test]
     fn reply_renders_markdown_math_and_escapes_html() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("course.toml"), "title = \"T\"\nslug = \"t\"\n").unwrap();
+        std::fs::write(
+            dir.path().join("course.toml"),
+            "title = \"T\"\nslug = \"t\"\n",
+        )
+        .unwrap();
         std::fs::write(
             dir.path().join("01-a.md"),
             "---\ntitle: A\n---\n\nBody.\n\n## Section\n\ntext\n",
@@ -519,7 +530,10 @@ mod tests {
         );
         assert!(html.contains("<strong>bold</strong>"), "{html}");
         assert!(html.contains(r#"data-tex="x^2""#), "{html}");
-        assert!(!html.contains("<script>"), "raw html must not pass through: {html}");
+        assert!(
+            !html.contains("<script>"),
+            "raw html must not pass through: {html}"
+        );
         assert!(html.contains("&lt;Widget"), "widget tag literal: {html}");
     }
 
@@ -536,6 +550,10 @@ mod tests {
         assert_eq!(
             normalize_math_delimiters(r"unpaired \( stays"),
             r"unpaired \( stays"
+        );
+        assert_eq!(
+            normalize_math_delimiters("em—dash \\(x^2\\) and 日本 \\(y\\) text"),
+            "em—dash $x^2$ and 日本 $y$ text"
         );
     }
 

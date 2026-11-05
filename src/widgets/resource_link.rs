@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
 const KINDS: [(&str, &str); 5] = [
     ("video", "Video"),
@@ -175,11 +175,13 @@ mod tests {
     fn requires_all_keys() {
         assert!(render(&instance(Some(json!({ "title": "t" })))).is_err());
         assert!(render(&instance(Some(json!({ "url": "https://x" })))).is_err());
-        assert!(render(&instance(Some(json!({
-            "title": "t",
-            "url": "https://x"
-        }))))
-        .is_err());
+        assert!(
+            render(&instance(Some(json!({
+                "title": "t",
+                "url": "https://x"
+            }))))
+            .is_err()
+        );
         assert!(render(&instance(None)).is_err());
     }
 }

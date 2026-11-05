@@ -1,5 +1,5 @@
 use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
 use crate::web::AppState;
@@ -48,10 +48,7 @@ pub async fn site_asset(Path(file): Path<String>) -> impl IntoResponse {
             [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
             TUTOR_JS,
         ),
-        "favicon.svg" => (
-            [(header::CONTENT_TYPE, "image/svg+xml")],
-            FAVICON,
-        ),
+        "favicon.svg" => ([(header::CONTENT_TYPE, "image/svg+xml")], FAVICON),
         _ => return (StatusCode::NOT_FOUND, "not found").into_response(),
     }
     .into_response()

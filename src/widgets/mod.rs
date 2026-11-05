@@ -1,4 +1,5 @@
 pub mod acknowledge;
+pub mod assignment;
 pub mod compare;
 pub mod expr;
 pub mod flashcard;
@@ -9,10 +10,11 @@ pub mod quiz;
 pub mod resource_link;
 pub mod slider;
 pub mod stepper;
+pub mod teach;
 pub mod template;
 
-use std::collections::HashMap;
 use leptos::prelude::*;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub enum WidgetError {
@@ -65,8 +67,7 @@ impl WidgetInstance {
     pub fn req_f64(&self, key: &str) -> Result<f64, WidgetError> {
         match self.cfg()?.get(key) {
             Some(v @ (serde_json::Value::Number(_) | serde_json::Value::String(_))) => {
-                serde_json::from_value::<f64>(v.clone())
-                    .map_err(|_| self.type_error(key, "number"))
+                serde_json::from_value::<f64>(v.clone()).map_err(|_| self.type_error(key, "number"))
             }
             Some(_) => Err(self.type_error(key, "number")),
             None => Err(self.missing(key)),
@@ -116,7 +117,10 @@ impl WidgetInstance {
         }
     }
 
-    pub fn opt_table(&self, key: &str) -> Result<Option<serde_json::Map<String, serde_json::Value>>, WidgetError> {
+    pub fn opt_table(
+        &self,
+        key: &str,
+    ) -> Result<Option<serde_json::Map<String, serde_json::Value>>, WidgetError> {
         match self.cfg()?.get(key) {
             None | Some(serde_json::Value::Null) => Ok(None),
             Some(serde_json::Value::Object(o)) => Ok(Some(o.clone())),
@@ -218,6 +222,18 @@ impl WidgetRegistry {
             script: include_str!("resource_link.js"),
             styles: include_str!("resource_link.css"),
         });
+        registry.register(WidgetDef {
+            name: "assignment",
+            render: assignment::render,
+            script: include_str!("assignment.js"),
+            styles: include_str!("assignment.css"),
+        });
+        registry.register(WidgetDef {
+            name: "teach",
+            render: teach::render,
+            script: include_str!("teach.js"),
+            styles: include_str!("teach.css"),
+        });
         registry
     }
 
@@ -234,12 +250,7 @@ impl WidgetRegistry {
     }
 }
 
-pub fn widget_shell(
-    kind: &str,
-    id: &str,
-    config_json: Option<String>,
-    inner: AnyView,
-) -> AnyView {
+pub fn widget_shell(kind: &str, id: &str, config_json: Option<String>, inner: AnyView) -> AnyView {
     let config_attr = config_json;
     let class = format!("widget {kind} widget-{kind}");
     view! {
@@ -264,6 +275,105 @@ pub fn error_shell(kind: &str, id: &str, message: &str) -> AnyView {
     .into_any()
 }
 
+/// The anonymous-viewer variant of the AI-graded widgets (`assignment`,
+/// `teach`): the card still shows what the feature does and the problem
+/// prompt, but the editor, preview, submission state, and — as always — the
+/// hidden reference/key points are absent. `sign_in` is the
+/// `/account?next=…` href back to the lesson being read; `None` (accounts
+/// disabled on this server) renders the explanation without a call to
+/// action. The graded endpoints stay signed-in-only regardless.
+pub fn resolve_locked_ai(
+    instance: &WidgetInstance,
+    sign_in: Option<&str>,
+) -> (AnyView, Option<String>) {
+    match locked_ai_view(instance, sign_in) {
+        Ok(view) => (view, None),
+        Err(WidgetError::MissingConfig) => {
+            let msg = format!(
+                "widget type '{}' needs a config entry: add [widgets.\"{}\"] to this course's config.toml",
+                instance.kind, instance.id
+            );
+            (
+                error_shell(&instance.kind, &instance.id, &msg),
+                Some(msg),
+            )
+        }
+        Err(WidgetError::Invalid(msg)) => (
+            error_shell(&instance.kind, &instance.id, &msg),
+            Some(msg),
+        ),
+    }
+}
+
+fn locked_ai_view(w: &WidgetInstance, sign_in: Option<&str>) -> Result<AnyView, WidgetError> {
+    let teach = w.kind == "teach";
+    let css = if teach { "teach" } else { "assignment" };
+    let prompt = assignment::required_nonempty(w, "prompt")?;
+    // Same validation as the interactive card so a broken config is a
+    // visible error card for every visitor; the hidden values are never
+    // rendered or serialized here either.
+    if teach {
+        w.opt_str("key_points")?;
+    } else {
+        assignment::required_nonempty(w, "reference")?;
+    }
+    let hint = w.opt_str("hint")?.filter(|h| !h.trim().is_empty());
+    let label = w
+        .opt_str("label")?
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| {
+            if teach {
+                "Be the teacher".to_string()
+            } else {
+                "Assignment".to_string()
+            }
+        });
+    let notice = if teach {
+        "Explain this lesson as if you were teaching it, and an AI grader checks your explanation for accuracy and completeness against the lesson."
+    } else {
+        "This assignment is graded by an AI grader: write an answer, submit it, and get a verdict with worked feedback plus the reference solution."
+    };
+    let label_class = format!("{css}-label");
+    let head_class = format!("{css}-head");
+    let prompt_class = format!("{css}-prompt");
+    let locked_class = format!("{css}-locked");
+    let prompt_views = assignment::segment_views(&assignment::split_math_segments(&prompt));
+    let hint_view: AnyView = match hint {
+        Some(h) => {
+            let body = assignment::segment_views(&assignment::split_math_segments(&h));
+            let hint_class = format!("{css}-hint");
+            let hint_body_class = format!("{css}-hint-body");
+            view! {
+                <details class={hint_class}>
+                    <summary>"Hint"</summary>
+                    <div class={hint_body_class}>{body}</div>
+                </details>
+            }
+            .into_any()
+        }
+        None => view! { <span hidden></span> }.into_any(),
+    };
+    let cta: AnyView = match sign_in {
+        Some(href) => view! {
+            <a class="button button-primary" href={href.to_string()}>"Sign in to use it"</a>
+        }
+        .into_any(),
+        None => view! { <span hidden></span> }.into_any(),
+    };
+    let inner = view! {
+        <div class={head_class}>
+            <span class={label_class}>{label}</span>
+        </div>
+        <div class={prompt_class}>{prompt_views}</div>
+        {hint_view}
+        <div class={locked_class}>
+            <p class="widget-locked-note">{notice.to_string()}</p>
+            {cta}
+        </div>
+    };
+    Ok(widget_shell(&w.kind, &w.id, None, inner.into_any()))
+}
+
 pub fn resolve(
     instance: &WidgetInstance,
     registry: &WidgetRegistry,
@@ -274,7 +384,11 @@ pub fn resolve(
             instance.kind,
             registry.kinds_sorted().join(", ")
         );
-        return (error_shell(&instance.kind, &instance.id, &msg), None, Some(msg));
+        return (
+            error_shell(&instance.kind, &instance.id, &msg),
+            None,
+            Some(msg),
+        );
     };
     match (def.render)(instance) {
         Ok(view) => (view, Some(def.name.to_string()), None),
@@ -363,6 +477,8 @@ mod tests {
             "interactive",
             "acknowledge",
             "resource-link",
+            "assignment",
+            "teach",
         ] {
             let def = r.get(kind).expect(kind);
             assert!(!def.script.is_empty());

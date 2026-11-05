@@ -116,7 +116,7 @@ pub struct ProgressRow {
     pub lesson: String,
 }
 
-/// Create-or-replace payload for one lesson note.
+/// Payload for one note (create or update).
 #[derive(Debug, Clone, Copy)]
 pub struct NoteDraft<'a> {
     pub course: &'a str,
@@ -126,7 +126,7 @@ pub struct NoteDraft<'a> {
     pub body: &'a str,
 }
 
-/// One `notebook_entries` row: a user's note for a single lesson.
+/// One `notebook_entries` row: one of a user's notes for a lesson.
 /// The `tutor_settings` singleton. `api_key` is a hidden PB field and is
 /// never present in API responses; `key_tail` is its non-secret display
 /// proxy (last four characters).
@@ -145,13 +145,99 @@ pub struct TutorSettings {
 
 impl TutorSettings {
     pub fn ready(&self) -> bool {
-        self.enabled && !self.base_url.is_empty() && !self.model.is_empty() && !self.key_tail.is_empty()
+        self.enabled
+            && !self.base_url.is_empty()
+            && !self.model.is_empty()
+            && !self.key_tail.is_empty()
     }
 }
 
 /// Last four characters, for the admin UI's "••••abcd" hint.
 pub fn key_tail(key: &str) -> String {
-    key.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect()
+    key.chars()
+        .rev()
+        .take(4)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
+}
+
+/// The `grader_settings` singleton. Same hidden-field shape as
+/// `TutorSettings`: `api_key` never appears in API responses; `key_tail` is
+/// its non-secret display proxy. Dual-engine: `base_url` + `chat_model`
+/// drive the OpenAI-compatible chat call (worked feedback; also the verdict
+/// when no Decisions setup exists), `decisions_url` + `model` optionally
+/// select the typed-verdict Decisions model (e.g. typesafe/jev-1.13).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct GraderSettings {
+    pub id: String,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub chat_model: String,
+    #[serde(default)]
+    pub decisions_url: String,
+    #[serde(default)]
+    pub key_tail: String,
+    #[serde(default)]
+    pub model: String,
+}
+
+impl GraderSettings {
+    /// The Decisions verdict engine is configured when both its URL and
+    /// model are set; partially configured counts as not configured.
+    pub fn decisions_ready(&self) -> bool {
+        !self.decisions_url.is_empty() && !self.model.is_empty()
+    }
+
+    pub fn ready(&self) -> bool {
+        self.enabled
+            && !self.base_url.is_empty()
+            && !self.chat_model.is_empty()
+            && !self.key_tail.is_empty()
+            && (self.decisions_url.is_empty() || !self.model.is_empty())
+    }
+}
+
+/// One `assignment_submissions` row: the learner's latest answer and the
+/// grader's latest verdict for one assignment widget.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AssignmentSubmission {
+    pub id: String,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub course: String,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub lesson: String,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub widget: String,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub answer: String,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub verdict: String,
+    #[serde(default)]
+    pub score: Option<f64>,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub feedback: String,
+    #[serde(default)]
+    pub attempt: Option<f64>,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub updated: String,
+}
+
+/// Create-or-replace payload for one assignment submission row.
+#[derive(Debug, Clone, Copy)]
+pub struct SubmissionDraft<'a> {
+    pub course: &'a str,
+    pub lesson: &'a str,
+    pub widget: &'a str,
+    pub answer: &'a str,
+    pub verdict: &'a str,
+    pub score: f64,
+    pub feedback: &'a str,
+    pub attempt: u32,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -167,6 +253,8 @@ pub struct NotebookEntry {
     pub here_title: String,
     #[serde(default, deserialize_with = "string_or_null")]
     pub body: String,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub created: String,
     #[serde(default, deserialize_with = "string_or_null")]
     pub updated: String,
 }
@@ -389,9 +477,7 @@ impl PocketBase {
             ));
         }
         if !resp.status().is_success() {
-            return Err(PbError::Rejected(
-                "Could not create the account.".into(),
-            ));
+            return Err(PbError::Rejected("Could not create the account.".into()));
         }
         Ok(())
     }
@@ -412,7 +498,12 @@ impl PocketBase {
 
     /// Generic paginated list over a records endpoint, following PB's
     /// `totalPages` cursor. Collection rules decide which rows come back.
-    async fn list_all<T>(&self, path: &str, token: Option<&str>, extra: &[(String, String)]) -> Result<Vec<T>, PbError>
+    async fn list_all<T>(
+        &self,
+        path: &str,
+        token: Option<&str>,
+        extra: &[(String, String)],
+    ) -> Result<Vec<T>, PbError>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -610,12 +701,7 @@ impl PocketBase {
 
     /// Add the course to the user's subscription list. Duplicate rows are a
     /// unique-index rejection; already-subscribed is idempotent success.
-    pub async fn subscribe(
-        &self,
-        token: &str,
-        user_id: &str,
-        course: &str,
-    ) -> Result<(), PbError> {
+    pub async fn subscribe(&self, token: &str, user_id: &str, course: &str) -> Result<(), PbError> {
         let resp = self
             .http
             .post(self.api("/api/collections/course_subscriptions/records"))
@@ -640,7 +726,12 @@ impl PocketBase {
     }
 
     /// Remove the subscription row if present; absent row is success.
-    pub async fn unsubscribe(&self, token: &str, user_id: &str, course: &str) -> Result<(), PbError> {
+    pub async fn unsubscribe(
+        &self,
+        token: &str,
+        user_id: &str,
+        course: &str,
+    ) -> Result<(), PbError> {
         let filter = format!(
             "user = {} && course = {}",
             filter_quote(user_id),
@@ -650,10 +741,7 @@ impl PocketBase {
             .list_all(
                 "/api/collections/course_subscriptions/records",
                 Some(token),
-                &[
-                    ("filter".into(), filter),
-                    ("fields".into(), "id".into()),
-                ],
+                &[("filter".into(), filter), ("fields".into(), "id".into())],
             )
             .await?;
         for row in rows {
@@ -676,25 +764,6 @@ impl PocketBase {
         Ok(())
     }
 
-    /// The user's note for one lesson, if any.
-    pub async fn get_notebook_entry(
-        &self,
-        token: &str,
-        user_id: &str,
-        course: &str,
-        lesson: &str,
-    ) -> Result<Option<NotebookEntry>, PbError> {
-        let filter = notebook_filter(user_id, course, Some(lesson));
-        let rows: Vec<NotebookEntry> = self
-            .list_all(
-                "/api/collections/notebook_entries/records",
-                Some(token),
-                &[("filter".into(), filter)],
-            )
-            .await?;
-        Ok(rows.into_iter().next())
-    }
-
     /// All of the user's notes for one course, any order (the caller sorts).
     pub async fn list_notebook_entries(
         &self,
@@ -711,10 +780,25 @@ impl PocketBase {
         .await
     }
 
-    /// Create or replace the user's note for a lesson. The unique
-    /// (user, course, lesson) index makes a duplicate create the signal to
-    /// patch the existing row instead, so saves are idempotent.
-    pub async fn upsert_notebook_entry(
+    /// All of the user's notes for one lesson, any order (the caller sorts).
+    pub async fn list_lesson_entries(
+        &self,
+        token: &str,
+        user_id: &str,
+        course: &str,
+        lesson: &str,
+    ) -> Result<Vec<NotebookEntry>, PbError> {
+        let filter = notebook_filter(user_id, course, Some(lesson));
+        self.list_all(
+            "/api/collections/notebook_entries/records",
+            Some(token),
+            &[("filter".into(), filter)],
+        )
+        .await
+    }
+
+    /// Append a new note for the lesson.
+    pub async fn create_notebook_entry(
         &self,
         token: &str,
         user_id: &str,
@@ -740,63 +824,52 @@ impl PocketBase {
             s if (200..300).contains(&s) => Ok(()),
             400 => {
                 let body_json: serde_json::Value = resp.json().await.unwrap_or_default();
-                if !body_json.to_string().contains("validation_not_unique") {
-                    return Err(reject_message(&body_json, "note save rejected"));
-                }
-                let existing: Vec<RecordId> = self
-                    .list_all(
-                        "/api/collections/notebook_entries/records",
-                        Some(token),
-                        &[
-                            (
-                                "filter".into(),
-                                notebook_filter(user_id, draft.course, Some(draft.lesson)),
-                            ),
-                            ("fields".into(), "id".into()),
-                        ],
-                    )
-                    .await?;
-                let Some(row) = existing.into_iter().next() else {
-                    return Err(PbError::Unreachable(
-                        "notebook entry vanished between create and patch".into(),
-                    ));
-                };
-                let resp = self
-                    .http
-                    .patch(self.api(&format!(
-                        "/api/collections/notebook_entries/records/{}",
-                        row.id
-                    )))
-                    .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-                    .json(&serde_json::json!({
-                        "anchor": draft.anchor,
-                        "here_title": draft.here_title,
-                        "body": draft.body,
-                    }))
-                    .send()
-                    .await
-                    .map_err(unreachable)?;
-                match resp.status().as_u16() {
-                    s if (200..300).contains(&s) => Ok(()),
-                    400 => {
-                        let body_json: serde_json::Value = resp.json().await.unwrap_or_default();
-                        Err(reject_message(&body_json, "note save rejected"))
-                    }
-                    401 | 403 => Err(PbError::Unauthorized),
-                    s => Err(PbError::Unreachable(format!("note patch: {s}"))),
-                }
+                Err(reject_message(&body_json, "note save rejected"))
             }
             401 | 403 => Err(PbError::Unauthorized),
             s => Err(PbError::Unreachable(format!("note create: {s}"))),
         }
     }
 
+    /// Replace one of the user's notes. The PB update rule scopes the patch
+    /// to the owner, so a foreign id matches nothing (404). Callers must
+    /// id-validate before calling (PB ids are plain [A-Za-z0-9]).
+    pub async fn update_notebook_entry(
+        &self,
+        token: &str,
+        id: &str,
+        draft: &NoteDraft<'_>,
+    ) -> Result<(), PbError> {
+        let resp = self
+            .http
+            .patch(self.api(&format!("/api/collections/notebook_entries/records/{id}")))
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .json(&serde_json::json!({
+                "anchor": draft.anchor,
+                "here_title": draft.here_title,
+                "body": draft.body,
+            }))
+            .send()
+            .await
+            .map_err(unreachable)?;
+        match resp.status().as_u16() {
+            s if (200..300).contains(&s) => Ok(()),
+            400 => {
+                let body_json: serde_json::Value = resp.json().await.unwrap_or_default();
+                Err(reject_message(&body_json, "note save rejected"))
+            }
+            401 | 403 => Err(PbError::Unauthorized),
+            404 => Err(PbError::Rejected("unknown note".into())),
+            s => Err(PbError::Unreachable(format!("note patch: {s}"))),
+        }
+    }
+
     /// The tutor settings row, if the admin has saved one. Public read: the
     /// only readable fields are non-secret (api_key is hidden by PB).
     pub async fn get_tutor_settings(&self) -> Result<Option<TutorSettings>, PbError> {
-        let rows: Vec<TutorSettings> =
-            self.list_all("/api/collections/tutor_settings/records", None, &[])
-                .await?;
+        let rows: Vec<TutorSettings> = self
+            .list_all("/api/collections/tutor_settings/records", None, &[])
+            .await?;
         Ok(rows.into_iter().next())
     }
 
@@ -828,12 +901,10 @@ impl PocketBase {
             )
             .await?;
         let req = match existing.into_iter().next() {
-            Some(row) => self
-                .http
-                .patch(self.api(&format!(
-                    "/api/collections/tutor_settings/records/{}",
-                    row.id
-                ))),
+            Some(row) => self.http.patch(self.api(&format!(
+                "/api/collections/tutor_settings/records/{}",
+                row.id
+            ))),
             None => self
                 .http
                 .post(self.api("/api/collections/tutor_settings/records")),
@@ -877,14 +948,213 @@ impl PocketBase {
             .filter(|k| !k.trim().is_empty()))
     }
 
+    /// The grader settings row, if the admin has saved one. Public read: the
+    /// only readable fields are non-secret (api_key is hidden by PB).
+    pub async fn get_grader_settings(&self) -> Result<Option<GraderSettings>, PbError> {
+        let rows: Vec<GraderSettings> = self
+            .list_all("/api/collections/grader_settings/records", None, &[])
+            .await?;
+        Ok(rows.into_iter().next())
+    }
+
+    /// Create-or-update the grader settings singleton. Must be called with a
+    /// superuser token: PB 0.40 only accepts `api_key` writes from it. An
+    /// empty `api_key` keeps whatever is stored.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn save_grader_settings(
+        &self,
+        token: &str,
+        enabled: bool,
+        base_url: &str,
+        chat_model: &str,
+        decisions_url: &str,
+        model: &str,
+        api_key: Option<&str>,
+    ) -> Result<(), PbError> {
+        let mut payload = serde_json::json!({
+            "enabled": enabled,
+            "base_url": base_url,
+            "chat_model": chat_model,
+            "decisions_url": decisions_url,
+            "model": model,
+        });
+        if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
+            payload["api_key"] = serde_json::json!(key.trim());
+            payload["key_tail"] = serde_json::json!(key_tail(key.trim()));
+        }
+        let existing: Vec<RecordId> = self
+            .list_all(
+                "/api/collections/grader_settings/records",
+                Some(token),
+                &[("fields".into(), "id".into())],
+            )
+            .await?;
+        let req = match existing.into_iter().next() {
+            Some(row) => self.http.patch(self.api(&format!(
+                "/api/collections/grader_settings/records/{}",
+                row.id
+            ))),
+            None => self
+                .http
+                .post(self.api("/api/collections/grader_settings/records")),
+        };
+        let resp = req
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(unreachable)?;
+        match resp.status().as_u16() {
+            s if (200..300).contains(&s) => Ok(()),
+            400 => {
+                let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                Err(reject_message(&body, "grader settings rejected"))
+            }
+            401 | 403 => Err(PbError::Unauthorized),
+            s => Err(PbError::Unreachable(format!("grader settings save: {s}"))),
+        }
+    }
+
+    /// The stored grader API key. `api_key` is a hidden field, so this only
+    /// works with a superuser token; the value never leaves the server.
+    pub async fn get_grader_api_key(&self, token: &str) -> Result<Option<String>, PbError> {
+        #[derive(Deserialize)]
+        struct KeyRow {
+            #[serde(default)]
+            api_key: Option<String>,
+        }
+        let rows: Vec<KeyRow> = self
+            .list_all(
+                "/api/collections/grader_settings/records",
+                Some(token),
+                &[("fields".into(), "api_key".into())],
+            )
+            .await?;
+        Ok(rows
+            .into_iter()
+            .next()
+            .and_then(|r| r.api_key)
+            .filter(|k| !k.trim().is_empty()))
+    }
+
+    /// The learner's latest submission row for one assignment widget.
+    pub async fn get_assignment_submission(
+        &self,
+        token: &str,
+        user_id: &str,
+        course: &str,
+        lesson: &str,
+        widget: &str,
+    ) -> Result<Option<AssignmentSubmission>, PbError> {
+        let rows: Vec<AssignmentSubmission> = self
+            .list_all(
+                "/api/collections/assignment_submissions/records",
+                Some(token),
+                &[(
+                    "filter".into(),
+                    submission_filter(user_id, course, lesson, widget),
+                )],
+            )
+            .await?;
+        Ok(rows.into_iter().next())
+    }
+
+    /// Create or replace the learner's submission for one widget. The unique
+    /// (user, course, lesson, widget) index makes a duplicate create the
+    /// signal to patch the existing row instead, so saves are idempotent.
+    pub async fn upsert_assignment_submission(
+        &self,
+        token: &str,
+        user_id: &str,
+        draft: &SubmissionDraft<'_>,
+    ) -> Result<(), PbError> {
+        let payload = serde_json::json!({
+            "user": user_id,
+            "course": draft.course,
+            "lesson": draft.lesson,
+            "widget": draft.widget,
+            "answer": draft.answer,
+            "verdict": draft.verdict,
+            "score": draft.score,
+            "feedback": draft.feedback,
+            "attempt": draft.attempt,
+        });
+        let resp = self
+            .http
+            .post(self.api("/api/collections/assignment_submissions/records"))
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(unreachable)?;
+        match resp.status().as_u16() {
+            s if (200..300).contains(&s) => Ok(()),
+            400 => {
+                let body_json: serde_json::Value = resp.json().await.unwrap_or_default();
+                if !body_json.to_string().contains("validation_not_unique") {
+                    return Err(reject_message(&body_json, "submission save rejected"));
+                }
+                let existing: Vec<RecordId> = self
+                    .list_all(
+                        "/api/collections/assignment_submissions/records",
+                        Some(token),
+                        &[
+                            (
+                                "filter".into(),
+                                submission_filter(
+                                    user_id,
+                                    draft.course,
+                                    draft.lesson,
+                                    draft.widget,
+                                ),
+                            ),
+                            ("fields".into(), "id".into()),
+                        ],
+                    )
+                    .await?;
+                let Some(row) = existing.into_iter().next() else {
+                    return Err(PbError::Unreachable(
+                        "submission vanished between create and patch".into(),
+                    ));
+                };
+                let resp = self
+                    .http
+                    .patch(self.api(&format!(
+                        "/api/collections/assignment_submissions/records/{}",
+                        row.id
+                    )))
+                    .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+                    .json(&serde_json::json!({
+                        "answer": draft.answer,
+                        "verdict": draft.verdict,
+                        "score": draft.score,
+                        "feedback": draft.feedback,
+                        "attempt": draft.attempt,
+                    }))
+                    .send()
+                    .await
+                    .map_err(unreachable)?;
+                match resp.status().as_u16() {
+                    s if (200..300).contains(&s) => Ok(()),
+                    400 => {
+                        let body_json: serde_json::Value = resp.json().await.unwrap_or_default();
+                        Err(reject_message(&body_json, "submission save rejected"))
+                    }
+                    401 | 403 => Err(PbError::Unauthorized),
+                    s => Err(PbError::Unreachable(format!("submission patch: {s}"))),
+                }
+            }
+            401 | 403 => Err(PbError::Unauthorized),
+            s => Err(PbError::Unreachable(format!("submission create: {s}"))),
+        }
+    }
+
     /// Delete one notebook entry by id (owner-scoped by PB rules). Missing
     /// rows are success, keeping saves idempotent.
     pub async fn delete_notebook_entry(&self, token: &str, id: &str) -> Result<(), PbError> {
         let resp = self
             .http
-            .delete(self.api(&format!(
-                "/api/collections/notebook_entries/records/{id}"
-            )))
+            .delete(self.api(&format!("/api/collections/notebook_entries/records/{id}")))
             .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
             .send()
             .await
@@ -976,10 +1246,7 @@ impl PocketBase {
             .list_all(
                 "/api/collections/course_access/records",
                 Some(token),
-                &[
-                    ("filter".into(), filter),
-                    ("fields".into(), "id".into()),
-                ],
+                &[("filter".into(), filter), ("fields".into(), "id".into())],
             )
             .await?;
         let payload = serde_json::json!({
@@ -988,27 +1255,25 @@ impl PocketBase {
             "allow_roles": allow_roles,
         });
         let resp = match existing.into_iter().next() {
-            Some(row) if !row.id.is_empty() => {
-                self.http
-                    .patch(self.api(&format!(
-                        "/api/collections/course_access/records/{id}",
-                        id = row.id
-                    )))
-                    .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-                    .json(&payload)
-                    .send()
-                    .await
-                    .map_err(unreachable)?
-            }
-            _ => {
-                self.http
-                    .post(self.api("/api/collections/course_access/records"))
-                    .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-                    .json(&payload)
-                    .send()
-                    .await
-                    .map_err(unreachable)?
-            }
+            Some(row) if !row.id.is_empty() => self
+                .http
+                .patch(self.api(&format!(
+                    "/api/collections/course_access/records/{id}",
+                    id = row.id
+                )))
+                .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+                .json(&payload)
+                .send()
+                .await
+                .map_err(unreachable)?,
+            _ => self
+                .http
+                .post(self.api("/api/collections/course_access/records"))
+                .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+                .json(&payload)
+                .send()
+                .await
+                .map_err(unreachable)?,
         };
         match resp.status().as_u16() {
             s if (200..300).contains(&s) => Ok(()),
@@ -1029,10 +1294,7 @@ impl PocketBase {
             .list_all(
                 "/api/collections/course_access/records",
                 Some(token),
-                &[
-                    ("filter".into(), filter),
-                    ("fields".into(), "id".into()),
-                ],
+                &[("filter".into(), filter), ("fields".into(), "id".into())],
             )
             .await?;
         for row in rows {
@@ -1066,10 +1328,7 @@ impl PocketBase {
         self.list_all(
             "/api/collections/course_grants/records",
             Some(token),
-            &[
-                ("filter".into(), filter),
-                ("expand".into(), "user".into()),
-            ],
+            &[("filter".into(), filter), ("expand".into(), "user".into())],
         )
         .await
     }
@@ -1366,6 +1625,19 @@ fn notebook_filter(user_id: &str, course: &str, lesson: Option<&str>) -> String 
     filter
 }
 
+/// Filter selecting the user's submission row for one assignment widget.
+/// Callers must slug-validate course/lesson first; the widget id is a
+/// config-keyed identifier, quoted the same way.
+fn submission_filter(user_id: &str, course: &str, lesson: &str, widget: &str) -> String {
+    format!(
+        "user = {} && course = {} && lesson = {} && widget = {}",
+        filter_quote(user_id),
+        filter_quote(course),
+        filter_quote(lesson),
+        filter_quote(widget)
+    )
+}
+
 pub(crate) fn filter_quote(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('"');
@@ -1428,7 +1700,10 @@ mod tests {
             "id": "u1", "email": "a@b.c", "roles": ["admin", "instructor"]
         }))
         .unwrap();
-        assert_eq!(record.roles, vec!["admin".to_string(), "instructor".to_string()]);
+        assert_eq!(
+            record.roles,
+            vec!["admin".to_string(), "instructor".to_string()]
+        );
         let user = record.into_auth();
         assert!(user.is_admin());
     }
@@ -1443,8 +1718,7 @@ mod tests {
         let record: RecordJson =
             serde_json::from_value(serde_json::json!({"id": "u1", "created": null})).unwrap();
         assert!(record.into_auth().created.is_empty());
-        let record: RecordJson =
-            serde_json::from_value(serde_json::json!({"id": "u1"})).unwrap();
+        let record: RecordJson = serde_json::from_value(serde_json::json!({"id": "u1"})).unwrap();
         assert!(record.into_auth().created.is_empty());
     }
 
@@ -1464,7 +1738,10 @@ mod tests {
             "id": "u1", "email": "a@b.c", "roles": "admin, student-fall26"
         }))
         .unwrap();
-        assert_eq!(record.roles, vec!["admin".to_string(), "student-fall26".to_string()]);
+        assert_eq!(
+            record.roles,
+            vec!["admin".to_string(), "student-fall26".to_string()]
+        );
     }
 
     #[test]
@@ -1483,7 +1760,10 @@ mod tests {
             "course": "crlb", "visibility": "private", "allow_roles": "student,ta"
         }))
         .unwrap();
-        assert_eq!(row.allow_roles, vec!["student".to_string(), "ta".to_string()]);
+        assert_eq!(
+            row.allow_roles,
+            vec!["student".to_string(), "ta".to_string()]
+        );
     }
 
     #[test]
@@ -1513,6 +1793,7 @@ mod tests {
         assert_eq!(entry.body, "hello");
         assert!(entry.anchor.is_empty());
         assert!(entry.here_title.is_empty());
+        assert!(entry.created.is_empty());
         let entry: NotebookEntry = serde_json::from_value(serde_json::json!({
             "id": "n2", "course": "c", "lesson": "l", "body": "b",
             "anchor": null, "here_title": null
@@ -1546,7 +1827,10 @@ mod tests {
     #[test]
     fn notebook_filter_scopes_to_owner_and_lesson() {
         let f = notebook_filter("u1", "crlb", Some("snell"));
-        assert_eq!(f, "user = \"u1\" && course = \"crlb\" && lesson = \"snell\"");
+        assert_eq!(
+            f,
+            "user = \"u1\" && course = \"crlb\" && lesson = \"snell\""
+        );
         let f = notebook_filter("u1", "crlb", None);
         assert_eq!(f, "user = \"u1\" && course = \"crlb\"");
         let f = notebook_filter("u\"1", "c", None);
@@ -1583,10 +1867,7 @@ mod tests {
     #[test]
     fn api_urls_join_base() {
         let pb = PocketBase::new("http://127.0.0.1:8090");
-        assert_eq!(
-            pb.api("/api/health"),
-            "http://127.0.0.1:8090/api/health"
-        );
+        assert_eq!(pb.api("/api/health"), "http://127.0.0.1:8090/api/health");
     }
 
     #[test]

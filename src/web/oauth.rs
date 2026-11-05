@@ -1,16 +1,16 @@
 use axum::extract::{Path, Query, State};
-use axum::http::{header, HeaderMap};
+use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use base64::Engine as _;
-use cookie::{Cookie, CookieBuilder, SameSite};
 use cookie::time::Duration;
+use cookie::{Cookie, CookieBuilder, SameSite};
 use percent_encoding::AsciiSet;
 use serde::{Deserialize, Serialize};
 
 use crate::pb::PbError;
-use crate::web::auth::{header_value, safe_next, NextParam};
-use crate::web::session;
 use crate::web::AppState;
+use crate::web::auth::{NextParam, header_value, safe_next};
+use crate::web::session;
 
 /// Short-lived httpOnly cookie carrying the in-flight OAuth2 roundtrip
 /// (PB-generated state, PKCE verifier, post-login destination). The identity
@@ -203,7 +203,10 @@ pub async fn callback(
         return resp;
     };
     if flow.provider != provider {
-        tracing::warn!("oauth callback: provider path '{}' does not match the started flow", provider);
+        tracing::warn!(
+            "oauth callback: provider path '{}' does not match the started flow",
+            provider
+        );
         let mut resp = error_redirect("oauth_state");
         cleared(&mut resp);
         return resp;
@@ -287,7 +290,8 @@ mod tests {
 
     #[test]
     fn redirect_uri_appends_to_pb_placeholder() {
-        let auth_url = "https://tenant.auth0.com/authorize?connection=google-oauth2&state=s&redirect_uri=";
+        let auth_url =
+            "https://tenant.auth0.com/authorize?connection=google-oauth2&state=s&redirect_uri=";
         assert_eq!(
             with_redirect_uri(auth_url, "http://127.0.0.1:3000/auth/oauth/oidc/callback"),
             "https://tenant.auth0.com/authorize?connection=google-oauth2&state=s&redirect_uri=http%3A%2F%2F127.0.0.1%3A3000%2Fauth%2Foauth%2Foidc%2Fcallback"

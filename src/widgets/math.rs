@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
 pub struct Definition {
     symbol: String,
@@ -19,13 +19,15 @@ fn parse_definitions(w: &WidgetInstance) -> Result<Vec<Definition>, WidgetError>
     }
     let mut defs = Vec::with_capacity(raw.len());
     for (i, entry) in raw.iter().enumerate() {
-        let obj = entry.as_object().ok_or_else(|| {
-            WidgetError::Invalid(format!("definitions[{i}] must be an object"))
-        })?;
+        let obj = entry
+            .as_object()
+            .ok_or_else(|| WidgetError::Invalid(format!("definitions[{i}] must be an object")))?;
         let symbol = obj
             .get("symbol")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| WidgetError::Invalid(format!("definitions[{i}].symbol must be a string")))?
+            .ok_or_else(|| {
+                WidgetError::Invalid(format!("definitions[{i}].symbol must be a string"))
+            })?
             .to_string();
         let meaning = obj
             .get("meaning")
@@ -47,7 +49,7 @@ fn parse_definitions(w: &WidgetInstance) -> Result<Vec<Definition>, WidgetError>
             Some(_) => {
                 return Err(WidgetError::Invalid(format!(
                     "definitions[{i}].link must be a string"
-                )))
+                )));
             }
         };
         if symbol.is_empty() || meaning.is_empty() {
@@ -114,7 +116,12 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
         {defs_view}
     };
 
-    Ok(widget_shell("math", &w.id, serialize_config(w.config.as_ref()), inner.into_any()))
+    Ok(widget_shell(
+        "math",
+        &w.id,
+        serialize_config(w.config.as_ref()),
+        inner.into_any(),
+    ))
 }
 
 #[cfg(test)]

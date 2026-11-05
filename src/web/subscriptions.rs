@@ -3,12 +3,12 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Redirect, Response};
 
 use crate::pb::PbError;
+use crate::web::AppState;
 use crate::web::access;
 use crate::web::auth::safe_next;
 use crate::web::pages::urlencode;
 use crate::web::progress::slug_ok;
 use crate::web::session::cleared_cookie;
-use crate::web::AppState;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct SubscriptionForm {
@@ -30,11 +30,7 @@ pub async fn update(
 
     let viewer = access::viewer(&state, &headers).await;
     let Some(sess) = viewer.session.clone() else {
-        return Redirect::to(&format!(
-            "/account?next={}",
-            urlencode(&next)
-        ))
-        .into_response();
+        return Redirect::to(&format!("/account?next={}", urlencode(&next))).into_response();
     };
     let Some(pb) = &state.pb else {
         return back_with_error();
@@ -49,15 +45,17 @@ pub async fn update(
     }
     let result = match form.action.as_str() {
         "subscribe" => pb.subscribe(&sess.token, &sess.user_id, &form.course).await,
-        "unsubscribe" => pb
-            .unsubscribe(&sess.token, &sess.user_id, &form.course)
-            .await,
+        "unsubscribe" => {
+            pb.unsubscribe(&sess.token, &sess.user_id, &form.course)
+                .await
+        }
         _ => Err(PbError::Rejected("unknown action".into())),
     };
     match result {
         Ok(()) => Redirect::to(&next).into_response(),
         Err(PbError::Unauthorized) => {
-            let mut resp = Redirect::to(&format!("/account?next={}", urlencode(&next))).into_response();
+            let mut resp =
+                Redirect::to(&format!("/account?next={}", urlencode(&next))).into_response();
             resp.headers_mut().append(
                 axum::http::header::SET_COOKIE,
                 crate::web::auth::header_value(cleared_cookie().to_string()),

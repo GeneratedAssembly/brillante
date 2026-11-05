@@ -40,15 +40,18 @@ is set, so `cargo test` never depends on a running PocketBase.
 While the server runs:
 
 ```sh
-curl -X POST http://127.0.0.1:3000/admin/reload      # reload content from disk
-curl http://127.0.0.1:3000/admin/diagnostics          # loader warnings/errors
+# Both admin utility endpoints are admin-gated: pass the browser's session
+# cookie, or an Authorization: Bearer <pb-jwt> header for scripts/curl.
+curl -X POST -H "Authorization: Bearer <pb-jwt>" http://127.0.0.1:3000/admin/reload
+curl -H "Authorization: Bearer <pb-jwt>" http://127.0.0.1:3000/admin/diagnostics
 ```
 
 Logs go through `tracing`; `RUST_LOG` filters them (default `brillante=info,info`).
 
 **The verification loop for content work is:** edit files → `POST /admin/reload`
-→ check `/admin/diagnostics` is clean → load the lesson page and confirm no
-`widget-error` cards. Content changes need no rebuild; Rust changes do.
+(admin session or Bearer token) → check `/admin/diagnostics` is clean → load
+the lesson page and confirm no `widget-error` cards. Content changes need no
+rebuild; Rust changes do.
 
 ## Repo map
 
@@ -85,8 +88,9 @@ src/
                         widget_shell / error_shell, resolve()
     expr.rs             safe arithmetic-expression parser (AST) for `interactive`
     math.js             KaTeX loader; exposes window.brillanteMath(root) for
-                        re-rendering math in injected fragments (tutor, notes preview)
-    quiz|slider|plot|flashcard|math|compare|stepper|interactive|acknowledge|resource-link  → .rs + .js + .css
+                        re-rendering math in injected fragments (tutor, notes preview);
+                        copy event substitutes TeX source for selected rendered math
+    quiz|slider|plot|flashcard|math|compare|stepper|interactive|acknowledge|resource-link|assignment|teach  → .rs + .js + .css
   web/
     mod.rs              axum router, reload + diagnostics endpoints
     pages.rs            home (dashboard when signed in, catalog when not),
@@ -101,15 +105,31 @@ src/
     subscriptions.rs    POST /my/subscriptions (subscribe/unsubscribe)
     admin.rs            /admin (→users), /admin/users (list/search/roles/delete),
                         /admin/courses (visibility/roles/grants),
-                        /admin/tutor (enable/endpoint/key/model) — admin-gated
+                        /admin/tutor (enable/endpoint/key/model),
+                        /admin/grader (enable/chat model/decisions model/key) — admin-gated
     tutor.rs            virtual tutor: settings cache, context builder, POST /api/tutor/chat
+    grader.rs           assignment grader: settings cache, dual-engine grading
+                        (Decisions verdict + chat feedback, or chat-only JSON
+                        contract), OpenRouter decisions + chat/completions calls
+    assignments.rs      POST /api/assignment/{preview,grade},
+                        GET /api/assignment/submission — gated markdown preview,
+                        LLM grading with hidden-reference resolution, PB upsert
+
+    teach.rs            "be the teacher" widget API: POST /api/teach/{preview,grade},
+                        GET /api/teach/submission — grades a lesson-teaching
+                        explanation against the lesson body (+ optional hidden
+                        key_points), stores in assignment_submissions
     session.rs          httpOnly session cookie (PB JWT), decode/refresh, Authed extractor
     progress.rs         /api/progress GET/POST (owner-scoped via PB rules)
     notes.rs            lesson notebooks: GET /notes/{course} index,
-                        POST /notes/{course}/{lesson} save, POST /api/notes/preview,
-                        lesson-page drawer view
+                        POST /notes/{course}/{lesson} append,
+                        POST /notes/{course}/{lesson}/{entry} update,
+                        POST /notes/{course}/{lesson}/{entry}/delete,
+                        POST /api/notes/preview, lesson-page drawer view
     assets.rs           site assets + per-widget script.js/style.css
-    scratchpad.js/.css  right-margin Python scratch pad (Pyodide, lazy CDN load)
+    scratchpad.js/.css  right-margin Python scratch pad (Pyodide, lazy CDN
+                        load); signed-in only — anonymous visitors on
+                        auth-enabled servers get a locked sign-in tab
     notes.js/.css       note drawer: open/close, preview fetch, @ and [[ autocomplete
     tutor.js/.css       tutor chat drawer: toggle, message list, POST /api/tutor/chat
     content_files.rs    static file serving from course dirs (sandboxed)
@@ -228,6 +248,8 @@ ships a `.js`/`.css` pair loaded by a page only when that kind appears.
 | `interactive` | Client-evaluated curve with parameter sliders: `expression` (req — safe DSL: `+ - * / ^`, parens, variable `x`, `pi`, functions `exp log sqrt abs min max pow sin cos`), `domain = [min, max]` (req), optional `ydomain`, `parameters = [{name, label?, min, max, step?, initial?}]` (step defaults to range/100, initial to midpoint), `samples` (16–2000, default 240), `title`/`xlabel`/`ylabel`, `xslider` (bool; defaults on when the `readout` references `x` or `y` — renders an independent-variable slider so the readout has something to react to), `readout` (template with `{x}`, `{y}` — the expression value at the probe point — or `{paramname}` substitution; precision specs like `{x:0.2f}` allowed; validated server-side). The server parses the expression into a JSON AST; the client never sees source text to `eval`. |
 | `acknowledge` | `statement` (req), `button_label` (default "I acknowledge"), `done_message` (default "Acknowledged"). Checkbox + button; the click persists to localStorage (`brillante.ack.v1`, keyed by widget id) and dispatches `brillante:ack`. A course with any `acknowledge` tag gets an automatic banner on its outline and lesson pages (`.ack-banner`, rendered hidden; `site.js` reveals it until one of the detected ids is acknowledged, reading the same `brillante.ack.v1` key) linking to the lesson containing the widget. Detection is automatic at load time via `scan_widget_tags_in_markdown` — no per-course config. |
 | `resource-link` | Outbound card link for external materials: `title` (req), `url` (req, absolute http(s)), `source` (req, e.g. "MIT OpenCourseWare"), `description` (optional), `kind` (optional: `video\|pdf\|assignment\|exam\|web`, default `web`; affects icon/label). Opens in a new tab. |
+| `assignment` | LLM-graded problem card: `prompt` (req — prose + `$…$`/`$$…$$`, no markdown), `reference` (req — hidden worked solution; validated but **never rendered or serialized into the page**: no `data-config` on this widget), `hint` (optional), `label` (optional), `button_label` (default "Submit for grading"), `placeholder` (optional). Drafts autosave to localStorage; Preview renders via `POST /api/assignment/preview`; Submit grades via `POST /api/assignment/grade` (signed-in + grader enabled in Admin → Grader). A graded attempt stores one `assignment_submissions` row per (user, course, lesson, widget), returns a verdict chip + worked feedback, and unlocks the reference panel; refresh restores it. Pulls in the `math` assets like `stepper` does. Signed-out visitors get a **locked card** instead: label, prompt, and hint still render (so the problem itself is visible) plus a note explaining the AI grading and a "Sign in to use it" CTA (`/account?next=<this lesson>`; no CTA on servers without accounts) — no editor, no draft UI, and the reference stays out of the DOM in both variants. Grading is dual-engine: a Decisions model (e.g. `typesafe/jev-1.13` via OpenRouter `/api/alpha/decisions` — typed verdicts only, no free text) decides verdict + score when configured, and the OpenAI-compatible chat model always writes the LaTeX feedback; without a Decisions setup one chat call grades through a JSON contract. |
+| `teach` | "Be the teacher" card — the learner explains the lesson as if teaching it, and the explanation is graded for accuracy + completeness against the lesson body itself: `prompt` (req — prose + `$…$`/`$$…$$`, e.g. "Explain the most important ideas of this lesson in your own words"), `key_points` (optional — hidden author-supplied key points the explanation should cover; grading context, then revealed as a "Show key points" panel only after a graded attempt; never in the DOM: no `data-config`), `hint` (optional), `label` (default "Be the teacher"), `button_label` (default "Submit for grading"), `placeholder` (optional). Drafts autosave; preview via `POST /api/teach/preview`; grading via `POST /api/teach/grade` (signed-in + grader enabled), same dual-engine split as `assignment` (Decisions verdict reworded for teaching quality, chat model writes feedback addressed to the student as a fellow teacher); stores in `assignment_submissions` and restores on refresh. Pulls in the `math` assets. Signed-out visitors get the same **locked card** as `assignment` (prompt + explanation + sign-in CTA, no editor, no key points in the DOM). |
 
 `$...$`/`$$...$$` math in lesson markdown reuses the `math` widget's KaTeX
 loader automatically — you only need a `math` *widget* when you want a label,
@@ -298,6 +320,13 @@ When you add or change widget config keys, update this file and `README.md`.
   (`src/render.rs`). Interactivity lives in the per-widget JS.
 - **Sandboxed content serving.** `/content/{course}/{path}` blocks `.toml`
   files, dotfiles, and traversal; keep it that way.
+- **AI features are signed-in surfaces.** Tutor chat, assignment/teach
+  grading, lesson notebooks, and the scratch pad all require a session.
+  Anonymous visitors on an auth-enabled server get locked, server-rendered
+  cards/tabs that say what the feature does and link to
+  `/account?next=<this page>`; on a server with accounts disabled the
+  features are simply not offered. Keep the UI gating in sync with the
+  endpoint gating (which stays signed-in-only regardless).
 - **Visibility gates every surface.** Catalog, `/browse`, search results,
   course/lesson pages, and content files all pass through
   `access::can_view`; anything that lists or matches courses must filter
@@ -313,8 +342,12 @@ When you add or change widget config keys, update this file and `README.md`.
 - **Auth is server-brokered, tokens stay httpOnly.** The browser talks only to
   Brillante's own `/auth/*` and `/api/progress` endpoints; the Rust server holds
   the PocketBase JWT in the `brillante.session` httpOnly/SameSite=Lax cookie and
-  forwards it as a Bearer token. Never expose the PB token to client JS, and
-  never let the client name the user it claims to be — `user` on create is
+  forwards it as a Bearer token. Server-side callers (scripts, curl) present the
+  same PB JWT as an `Authorization: Bearer` header instead of the cookie — every
+  auth check resolves the token from either (`session::token_from_headers`) and
+  PocketBase re-verifies it on the proxied call, so no endpoint can be skirted
+  by crafting a request outside the browser. Never expose the PB token to
+  client JS, and never let the client name the user it claims to be — `user` on create is
   checked against `@request.auth.id` by PB rules.
 - **Style.** Colocated `#[cfg(test)]` unit tests for parsing/validation logic;
   small pure functions; edition-2024 idioms; no comments unless explaining a
@@ -337,10 +370,12 @@ progress stays in `localStorage`. The shipped dev config points at
   (a duplicate create is treated as success); `uncomplete` finds by an escaped
   filter then deletes (absent row is success). Both are idempotent.
 - **`notebook_entries` record** = `(user → users, course, lesson, anchor,
-  here_title, body, created, updated)`, one row per `(user, course, lesson)`
-  (`src/web/notes.rs`). All rules are owner-scoped; create pins
-  `@request.body.user = @request.auth.id`. The upsert is create-then-patch on
-  the unique-index 400; an empty body deletes.
+  here_title, body, created, updated)`; a lesson holds **multiple** notes,
+  saved oldest-first by `created` (`src/web/notes.rs`). All rules are
+  owner-scoped; create pins `@request.body.user = @request.auth.id`.
+  `POST /notes/{course}/{lesson}` appends a note (empty body = no-op);
+  `POST /notes/{course}/{lesson}/{entry}` replaces one (empty body deletes
+  it); `POST /notes/{course}/{lesson}/{entry}/delete` removes it.
 - **Ownership is enforced at two layers.** PocketBase API rules scope every
   request to `@request.auth.id`; Brillante additionally validates course/lesson
   as slugs before calling PB. The server never trusts a client-supplied user id.
@@ -373,9 +408,11 @@ progress stays in `localStorage`. The shipped dev config points at
 
 ## Lesson notebooks (per-user notes)
 
-Signed-in visitors get a Note drawer on every lesson page (`src/web/notes.rs`
-+ `notes.js`/`notes.css`): one note per (user, course, lesson), stored in the
-owner-scoped `notebook_entries` PB collection. Key rules:
+Signed-in visitors get a Notes drawer on every lesson page (`src/web/notes.rs`
++ `notes.js`/`notes.css`): many notes per (user, course, lesson), stored in the
+owner-scoped `notebook_entries` PB collection. Anonymous visitors on an
+auth-enabled server get a locked "Notes · sign in" tab instead (server-
+rendered, links to `/account?next=<this lesson>`). Key rules:
 
 - **Markdown + LaTeX only, same renderer as lessons** but with
   `MarkdownCtx::widgets: false` — `<Widget>` tags in note bodies render as
@@ -455,3 +492,8 @@ that shape content decisions:
   must be `JSONField`s, and API rules cannot exactly match JSON array elements
   (`?=` matches nothing, `~` matches substrings). That is why admin gating
   uses the mirrored boolean `users.is_admin` (see migration 1791780764).
+- The `assignment` widget's config carries the hidden reference solution, so
+  it deliberately emits **no `data-config`**: everything the client needs
+  comes from `data-widget-id` plus the body's course/lesson/auth dataset,
+  and the reference reaches the browser only inside a graded attempt's
+  response (`assignment::render`). Keep it that way.

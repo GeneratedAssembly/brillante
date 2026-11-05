@@ -50,11 +50,12 @@ courses = ["content/getting-started", "content/another-course"]
 ```
 
 Each registered directory is one course. Reload after editing registrations or
-content:
+content — both operations are admin-gated, so authenticate like the browser
+does (session cookie) or pass the user JWT as a bearer token:
 
 ```
-curl -X POST http://127.0.0.1:3000/admin/reload
-curl http://127.0.0.1:3000/admin/diagnostics   # warnings and errors from loading
+curl -X POST -H "Authorization: Bearer <pb-jwt>" http://127.0.0.1:3000/admin/reload
+curl -H "Authorization: Bearer <pb-jwt>" http://127.0.0.1:3000/admin/diagnostics
 ```
 
 ## Course directory layout
@@ -169,6 +170,8 @@ appears.
 | `compare` | Two side-by-side equation panels: `left`/`right`, each `{title?, tex (string or string array, req), note?}`; titles default "Original"/"Revised". Legacy widget kept for older content. |
 | `acknowledge` | `statement` (req), `button_label` (default "I acknowledge"), `done_message` (default "Acknowledged"). Checkbox + button; the click persists to localStorage (`brillante.ack.v1`, keyed by widget id) and dispatches `brillante:ack`. Courses containing any `acknowledge` tag get an automatic site-wide banner (course outline + every lesson) linking to the lesson with the widget; the banner stays up until one of the ids is acknowledged. |
 | `resource-link` | Outbound card link to external material: `title` (req), `url` (req, absolute http(s)), `source` (req, e.g. "MIT OpenCourseWare"), `description` (optional), `kind` (optional: `video\|pdf\|assignment\|exam\|web`, default `web` — affects icon and label). Opens in a new tab. |
+| `assignment` | LLM-graded problem card: `prompt` (req — prose with `$…$`/`$$…$$` math, no markdown), `reference` (req — hidden worked solution + rubric; **never sent to the browser** and absent from the DOM even though it lives in `config.toml`), `hint` (optional opt-in nudge), `label` (optional, e.g. "Kay I · Ch. 3 · A1"), `button_label` (default "Submit for grading"), `placeholder` (optional textarea hint). Learners draft answers (localStorage autosave), preview markdown rendering, and submit for LLM grading through `POST /api/assignment/grade` (requires the grader to be enabled in **Admin → Grader** and a signed-in account). A graded attempt returns a verdict chip, worked feedback, and unlocks the reference; the latest submission is restored on refresh. Signed-out visitors get a locked card instead: the problem (label, prompt, hint) stays visible plus a note about the AI grading and a "Sign in to use it" link — no editor, and the reference never reaches the DOM. Grading is dual-engine: a Decisions model (e.g. `typesafe/jev-1.13`) decides the verdict and score when configured, and the chat model writes the LaTeX feedback. |
+| `teach` | "Be the teacher" card for learning by teaching: the learner explains the lesson's material in their own words, and the explanation is graded for accuracy and completeness against the **lesson body itself** (no `reference` needed). Keys: `prompt` (req — prose with `$…$`/`$$…$$` math, e.g. "You're the teacher. Explain the most important ideas of this lesson as clearly as you can"), `key_points` (optional — hidden key points the explanation should cover; used as grading context and revealed as a "Show key points" panel only after a graded attempt; absent from the DOM like `reference`), `hint`, `label` (default "Be the teacher"), `button_label` (default "Submit for grading"), `placeholder` (optional). Same draft/preview/restore UX and dual-engine grading as `assignment`, via `POST /api/teach/{preview,grade}` and `GET /api/teach/submission`; submissions share the `assignment_submissions` store keyed by widget id. Signed-out visitors get the same locked card as `assignment` (prompt visible, no editor, key points never in the DOM). |
 
 `$...$`/`$$...$$` math in lesson markdown reuses the `math` widget's KaTeX
 loader automatically — you only need a `math` *widget* when you want a label,
@@ -230,19 +233,29 @@ kind appears in its lesson, and changes require a rebuild.
 | `/widgets/{kind}/script.js`, `/widgets/{kind}/style.css` | per-kind assets |
 | `/content/{course}/{path}` | files from the course directory (`.toml` and dotfiles blocked) |
 | `/assets/site.css`, `/assets/site.js`, `/assets/favicon.svg` | platform assets |
-| `/assets/scratchpad.css`, `/assets/scratchpad.js` | scratch pad assets (loaded on course pages only) |
+| `/assets/scratchpad.css`, `/assets/scratchpad.js` | scratch pad assets (signed-in visitors on course pages only) |
 | `POST /auth/login`, `/auth/signup`, `/auth/logout`, `GET /auth/me` | account endpoints |
 | `GET /auth/oauth/{provider}` + `/callback` | SSO sign-in (providers reported by PocketBase) |
 | `POST /my/subscriptions` | subscribe/unsubscribe (form: `course`, `action`, `next`) |
 | `GET/POST /api/progress` | signed-in lesson progress (owner-scoped) |
 | `GET /notes/{course}` | your notebook index for a course (signed in) |
-| `POST /notes/{course}/{lesson}` | create/replace your note for a lesson |
+| `POST /notes/{course}/{lesson}` | append a note to a lesson (empty body = no-op) |
+| `POST /notes/{course}/{lesson}/{entry}` | replace one of your notes (empty body deletes it) |
+| `POST /notes/{course}/{lesson}/{entry}/delete` | remove one of your notes |
 | `POST /api/notes/preview` | render a draft note to an HTML fragment |
 | `POST /api/tutor/chat` | signed-in tutor question (proxied LLM call, lesson context attached) |
+| `POST /api/assignment/preview` | render a draft assignment answer to HTML (open; nothing persisted) |
+| `POST /api/assignment/grade` | signed-in LLM grading of an assignment widget's answer (proxied, reference resolved server-side from `config.toml`) |
+| `GET /api/assignment/submission` | your latest graded attempt for one widget (signed in) |
+| `POST /api/teach/preview` | render a draft teaching explanation to HTML (open; nothing persisted) |
+| `POST /api/teach/grade` | signed-in LLM grading of a "be the teacher" explanation against the lesson body (key points resolved server-side) |
+| `GET /api/teach/submission` | your latest teaching attempt for one widget (signed in) |
 | `/admin` | admin landing (redirects to the user list; admins only) |
 | `/admin/users`, `/admin/courses` | admin pages (only with the `admin` role) |
 | `POST /admin/users/roles`, `POST /admin/users/delete` | role edits, account deletion (admin) |
-| `/healthz`, `POST /admin/reload`, `/admin/diagnostics` | operations |
+| `/admin/tutor`, `/admin/grader` | tutor / assignment-grader configuration (enable, endpoint, models, hidden API key) |
+| `/healthz` | operations (public) |
+| `POST /admin/reload`, `GET /admin/diagnostics` | operations (admin only; session cookie or `Authorization: Bearer <pb-jwt>`) |
 
 Search is server-side and privacy-gated: results are filtered through the
 same course-visibility rules as the catalog, so a private course never
@@ -307,14 +320,17 @@ to emit), using the same KaTeX pipeline as lessons. The API key is stored in a h
 PocketBase field — never returned by any API, readable and writable only with
 the server's superuser credentials — and chat is gated by the same course
 visibility rules as everything else. The drawer is JS-only (no server-
-rendered fallback; it simply doesn't appear without JS).
+rendered fallback; it simply doesn't appear without JS). The tutor is a
+signed-in feature: anonymous visitors on an auth-enabled server get a locked
+"Tutor · sign in" tab on lesson pages when the tutor is enabled.
 
 ## Lesson notebooks
 
 Signed-in visitors get a **Note** drawer on every lesson page: one private
 note per lesson, saved to your account (PocketBase), never visible to anyone
-else. Notes are markdown + LaTeX using the same renderer as lessons — with
-two shorthand links:
+else. Anonymous visitors on an auth-enabled server get a locked "Notes ·
+sign in" tab instead. Notes are markdown + LaTeX using the same renderer as
+lessons — with two shorthand links:
 
 - `[[lesson-slug]]` → a link to a lesson in the current course (type `[[` in
   the drawer to pick one).
@@ -330,15 +346,18 @@ course in lesson order.
 
 ## Scratch pad
 
-Every course view (outline and lesson pages) has a pull-out Python console on
-the right margin — a tab labeled "Scratch pad". It runs real Python
-(Pyodide/WebAssembly) entirely in the browser: nothing is sent to the server
-and code cannot touch the host. The runtime (~10 MB) downloads from the CDN on
-first open and is cached afterwards; offline, the console stays disabled the
-way KaTeX falls back to raw TeX. It speaks IPython conventions — `In [n]:` /
-`Out [n]:` prompts, blank line ends a block, `Tab` completion, `↑/↓` history,
-top-level `await`, auto-loading of bundled packages (numpy, pandas, …) — with
-a Reset button for a fresh namespace. State lives only in the current page.
+Signed-in visitors on every course view (outline and lesson pages) get a
+pull-out Python console on the right margin — a tab labeled "Scratch pad". It
+runs real Python (Pyodide/WebAssembly) entirely in the browser: nothing is
+sent to the server and code cannot touch the host. The runtime (~10 MB)
+downloads from the CDN on first open and is cached afterwards; offline, the
+console stays disabled the way KaTeX falls back to raw TeX. It speaks IPython
+conventions — `In [n]:` / `Out [n]:` prompts, blank line ends a block, `Tab`
+completion, `↑/↓` history, top-level `await`, auto-loading of bundled packages
+(numpy, pandas, …) — with a Reset button for a fresh namespace. State lives
+only in the current page. Signed-out visitors on a server with accounts see a
+locked "Scratch pad · sign in" tab instead; where accounts are disabled
+entirely, the feature is not offered.
 
 ## Docker
 

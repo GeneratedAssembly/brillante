@@ -28,8 +28,8 @@ services:
       AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
       AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
       AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET:-}
-    ports:
-      - "8090:8090" # admin UI at /_/; drop this mapping to keep PB internal
+    # No host port mapping: PB stays internal; reach it through the tunnel
+    # (a cloudflared ingress rule -> http://pocketbase:8090) if needed.
     depends_on:
       pb-init:
         condition: service_completed_successfully
@@ -41,21 +41,42 @@ services:
       - ./deploy/brillante.compose.toml:/srv/brillante/brillante.toml:ro
       - ./content:/srv/brillante/content:ro
       - ./courses:/srv/brillante/courses:ro
+      # ./courses/stats and ./courses/optics-course are symlinks to absolute
+      # host paths, which have no meaning inside the container; mount the real
+      # course dirs at flat paths instead (the empty courses/stats-course and
+      # courses/optics dirs exist so the mount targets resolve).
+      - /mnt/storage/code/brillante-courses/stats/course:/srv/brillante/courses/stats-course:ro
+      - /mnt/storage/code/brillante-courses/optics-course:/srv/brillante/courses/optics:ro
     environment:
       # Used only by the startup bootstrap that keeps bootstrap_admins
       # promoted (and hidden tutor api_key reads/writes). Same superuser.
       BRILLANTE_PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL:?set PB_SUPERUSER_EMAIL in .env}
       BRILLANTE_PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD:?set PB_SUPERUSER_PASSWORD in .env}
-    ports:
-      - "3000:3000"
-    depends_on:
-      - pocketbase
+    # No host port mapping: all ingress goes through the cloudflared tunnel.
+    # No depends_on: podman-compose flattens the dependency graph into podman
+    # --requires links, and the exited pb-init one-shot then blocks every
+    # start/restart of this service ("container state improper"). Brillante
+    # tolerates PocketBase being briefly unavailable at boot (bootstrap
+    # retries; pages degrade gracefully), so start ordering is not load-bearing.
+    depends_on: []
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/healthz"]
       interval: 15s
       timeout: 3s
       retries: 4
       start_period: 10s
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    # Token-based (remotely-managed) tunnel: ingress rules live in the
+    # Cloudflare dashboard (Zero Trust -> Networks -> Tunnels), pointing at
+    # http://brillante:3000 (and optionally http://pocketbase:8090).
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    # No depends_on: cloudflared dials outbound and retries on its own, and
+    # podman refuses to start past the exited pb-init one-shot otherwise.
     restart: unless-stopped
 
 volumes:

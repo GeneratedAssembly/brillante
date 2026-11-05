@@ -9,10 +9,10 @@ use crate::content::course::{Course, Lesson};
 use crate::content::markdown::{self, MarkdownCtx, NoteHere};
 use crate::pb::PbError;
 use crate::render::{render_document, render_html};
+use crate::web::AppState;
 use crate::web::access::{self, Viewer};
 use crate::web::pages::Shell;
 use crate::web::progress::slug_ok;
-use crate::web::AppState;
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct NoteForm {
@@ -65,6 +65,8 @@ pub(crate) fn render_note_views(
         source: std::path::Path::new(&lesson.file_name),
         lessons_by_file: &by_file,
         widgets: false,
+        ai_locked: false,
+        auth_available: false,
     };
     let mut diags = Vec::new();
     let output = markdown::render_markdown(&expanded, &ctx, &state.registry, &mut diags);
@@ -116,37 +118,108 @@ async fn viewer_for(state: &AppState, headers: &HeaderMap) -> Result<Viewer, PbE
     Ok(viewer)
 }
 
-/// The lesson-page note drawer: saved note (rendered), edit form, and the
-/// autocomplete payload. `status` is the post-save redirect flag.
+/// Drawer entries in saved order (oldest first; `created` then id, both
+/// PB-assigned and stable lexicographically).
+pub(crate) fn sorted_entries(
+    entries: &[crate::pb::NotebookEntry],
+) -> Vec<&crate::pb::NotebookEntry> {
+    let mut refs: Vec<&crate::pb::NotebookEntry> = entries.iter().collect();
+    refs.sort_by(|a, b| (&a.created, &a.id).cmp(&(&b.created, &b.id)));
+    refs
+}
+
+/// PB timestamps render as `YYYY-MM-DD HH:MM:SS.000Z`; the date prefix is
+/// enough for a notebook listing.
+fn note_date(ts: &str) -> String {
+    ts.get(..10).unwrap_or(ts).to_string()
+}
+
+/// PB record ids are plain alphanumerics; reject anything else before the
+/// value reaches a PB URL path.
+fn entry_id_ok(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// The lesson-page note drawer: saved notes (rendered, each with edit and
+/// delete controls), the composer, and the autocomplete payload. `status` is
+/// the post-save redirect flag; `edit_id` (from `?note=`) opens the composer
+/// over one saved note.
 pub(crate) fn drawer(
     state: &AppState,
     course: &Course,
     lesson: &Lesson,
-    entry: Option<&crate::pb::NotebookEntry>,
+    entries: &[crate::pb::NotebookEntry],
     status: Option<&str>,
+    edit_id: Option<&str>,
 ) -> AnyView {
-    let saved: AnyView = match entry {
-        Some(e) if !e.body.trim().is_empty() => {
+    let sorted = sorted_entries(entries);
+    let editing = edit_id.and_then(|id| sorted.iter().copied().find(|e| e.id == id));
+    let course_esc = crate::web::pages::urlencode(&course.slug);
+    let lesson_esc = crate::web::pages::urlencode(&lesson.slug);
+    let create_action = format!("/notes/{course_esc}/{lesson_esc}");
+    let index_href = format!("/notes/{course_esc}");
+    let lesson_url = format!("/course/{course_esc}/{lesson_esc}");
+
+    let raw = editing.map(|e| e.body.clone()).unwrap_or_default();
+    let anchor = editing.map(|e| e.anchor.clone()).unwrap_or_default();
+    let here = editing.map(|e| e.here_title.clone()).unwrap_or_default();
+    let action = match editing {
+        Some(e) => format!("{create_action}/{}", e.id),
+        None => create_action.clone(),
+    };
+
+    let items: Vec<AnyView> = sorted
+        .iter()
+        .filter(|e| !e.body.trim().is_empty())
+        .map(|e| {
             let views = render_note_views(state, course, lesson, &e.body, &e.anchor, &e.here_title);
+            let edit_href = format!("?note={}", e.id);
+            let delete_action = format!("{create_action}/{}/delete", e.id);
+            let here_chip: Option<AnyView> = if e.anchor.is_empty() {
+                None
+            } else {
+                let label = if e.here_title.is_empty() {
+                    format!("§ {}", e.anchor)
+                } else {
+                    format!("§ {}", e.here_title)
+                };
+                let jump = format!("{lesson_url}#{}", e.anchor);
+                Some(
+                    view! {
+                        <a class="notebook-here" href={jump}>{label}</a>
+                    }
+                    .into_any(),
+                )
+            };
+            let item_raw = e.body.clone();
+            let item_anchor = e.anchor.clone();
+            let item_here = e.here_title.clone();
             view! {
-                <div class="notebook-saved">
-                    <h3>"Saved note"</h3>
+                <div
+                    class="notebook-item"
+                    data-notebook-entry-item=""
+                    data-notebook-entry={e.id.clone()}
+                    data-entry-anchor={item_anchor}
+                    data-entry-here={item_here}
+                >
+                    <div class="notebook-item-meta">
+                        <span class="notebook-item-date">{note_date(&e.created)}</span>
+                        {here_chip}
+                        <span class="notebook-item-actions">
+                            <a class="notebook-mini" data-notebook-edit data-notebook-entry={e.id.clone()} href={edit_href}>"Edit"</a>
+                            <form method="post" action={delete_action} data-notebook-delete>
+                                <button type="submit" class="notebook-mini">"Delete"</button>
+                            </form>
+                        </span>
+                    </div>
                     <div class="note-markdown">{views}</div>
+                    <textarea class="notebook-raw" data-notebook-raw data-notebook-entry={e.id.clone()} hidden>{item_raw}</textarea>
                 </div>
             }
             .into_any()
-        }
-        _ => view! { <span hidden></span> }.into_any(),
-    };
-    let raw = entry.map(|e| e.body.clone()).unwrap_or_default();
-    let anchor = entry.map(|e| e.anchor.clone()).unwrap_or_default();
-    let here = entry.map(|e| e.here_title.clone()).unwrap_or_default();
-    let action = format!(
-        "/notes/{}/{}",
-        crate::web::pages::urlencode(&course.slug),
-        crate::web::pages::urlencode(&lesson.slug)
-    );
-    let index_href = format!("/notes/{}", crate::web::pages::urlencode(&course.slug));
+        })
+        .collect();
+
     let lessons_json = serde_json::to_string(
         &course
             .lessons
@@ -166,22 +239,34 @@ pub(crate) fn drawer(
         .into_any(),
         _ => view! { <span hidden></span> }.into_any(),
     };
+    let aside_class = if editing.is_some() { "open" } else { "" };
+    let editing_hidden = editing.is_none();
     view! {
-        <aside id="notebook" aria-label="Lesson notes">
+        <aside id="notebook" class={aside_class} aria-label="Lesson notes">
             <div class="notebook-head">
-                <span class="notebook-title">"Note"</span>
+                <span class="notebook-title">"Notes"</span>
                 {status_view}
                 <a class="notebook-index" href={index_href}>"All notes"</a>
                 <button type="button" class="notebook-btn" data-notebook-close>"Close"</button>
             </div>
-            {saved}
-            <form method="post" action={action} class="notebook-form">
+            <div class="notebook-items">{items}</div>
+            <div class="notebook-editing" data-notebook-editing hidden={editing_hidden}>
+                <span>"Editing a saved note — Save replaces it. Clear the text and Save to delete it."</span>
+                <a class="notebook-mini" data-notebook-new href={lesson_url}>"New note"</a>
+            </div>
+            <form
+                method="post"
+                action={action}
+                class="notebook-form"
+                data-notebook-form
+                data-notebook-create-action={create_action}
+            >
                 <textarea
                     name="body"
                     class="notebook-input"
                     data-notebook-input
                     rows="6"
-                    placeholder="Write a note. @ links sections, [[ links lessons."
+                    placeholder="Write a note. Saving adds one. @ links sections, [[ links lessons."
                 >{raw}</textarea>
                 <input type="hidden" name="anchor" data-notebook-anchor value={anchor} />
                 <input type="hidden" name="here_title" data-notebook-here value={here} />
@@ -201,7 +286,7 @@ pub(crate) fn drawer(
             aria-expanded="false"
             hidden
         >
-            "Note"
+            "Notes"
         </button>
     }
     .into_any()
@@ -251,51 +336,89 @@ pub async fn index(
             Vec::new()
         }
     };
-    let by_lesson: HashMap<&str, &crate::pb::NotebookEntry> = entries
-        .iter()
-        .map(|e| (e.lesson.as_str(), e))
-        .collect();
+    let mut by_lesson: HashMap<&str, Vec<&crate::pb::NotebookEntry>> = HashMap::new();
+    for entry in &entries {
+        by_lesson
+            .entry(entry.lesson.as_str())
+            .or_default()
+            .push(entry);
+    }
+    for group in by_lesson.values_mut() {
+        group.sort_by(|a, b| (&a.created, &a.id).cmp(&(&b.created, &b.id)));
+    }
 
     let mut sections: Vec<AnyView> = Vec::new();
     let mut rendered_lessons: std::collections::HashSet<String> = std::collections::HashSet::new();
     for lesson in &course.lessons {
-        let Some(entry) = by_lesson.get(lesson.slug.as_str()) else {
+        let Some(group) = by_lesson.get(lesson.slug.as_str()) else {
             continue;
         };
         rendered_lessons.insert(lesson.slug.clone());
         let href = format!("/course/{}/{}", course.slug, lesson.slug);
         let lesson_title = lesson.title.clone();
-        let views = render_note_views(
-            &state,
-            course,
-            lesson,
-            &entry.body,
-            &entry.anchor,
-            &entry.here_title,
-        );
+        let notes: Vec<AnyView> = group
+            .iter()
+            .map(|entry| {
+                let views = render_note_views(
+                    &state,
+                    course,
+                    lesson,
+                    &entry.body,
+                    &entry.anchor,
+                    &entry.here_title,
+                );
+                let date = note_date(&entry.created);
+                let here_chip: Option<AnyView> = if entry.anchor.is_empty() {
+                    None
+                } else {
+                    let label = if entry.here_title.is_empty() {
+                        format!("§ {}", entry.anchor)
+                    } else {
+                        format!("§ {}", entry.here_title)
+                    };
+                    let jump = format!("{href}#{}", entry.anchor);
+                    Some(view! { <a class="notebook-here" href={jump}>{label}</a> }.into_any())
+                };
+                view! {
+                    <article class="notebook-entry-note">
+                        <div class="notebook-item-meta">
+                            <span class="notebook-item-date">{date}</span>
+                            {here_chip}
+                        </div>
+                        <div class="note-markdown">{views}</div>
+                    </article>
+                }
+                .into_any()
+            })
+            .collect();
         sections.push(
             view! {
                 <section class="notebook-entry">
                     <h2 class="section-title">
                         <a href={href}>{lesson_title}</a>
                     </h2>
-                    <div class="notebook-entry-body note-markdown">{views}</div>
+                    {notes}
                 </section>
             }
             .into_any(),
         );
     }
-    for entry in &entries {
-        if rendered_lessons.contains(&entry.lesson) {
-            continue;
-        }
-        let lesson_title = entry.lesson.clone();
+    let mut orphans: Vec<(&str, usize)> = by_lesson
+        .iter()
+        .filter(|(lesson, _)| !rendered_lessons.contains(**lesson))
+        .map(|(lesson, group)| (*lesson, group.len()))
+        .collect();
+    orphans.sort();
+    for (lesson_slug, count) in orphans {
+        let lesson_title = lesson_slug.to_string();
+        let count_label = format!("{count} note{}", if count == 1 { "" } else { "s" });
         sections.push(
             view! {
                 <section class="notebook-entry notebook-orphan">
                     <h2 class="section-title">
                         {lesson_title}
                         <span class="chip chip-private">"lesson removed"</span>
+                        <span class="notebook-item-date">{count_label}</span>
                     </h2>
                 </section>
             }
@@ -340,71 +463,76 @@ pub async fn index(
     .into_response()
 }
 
-/// `POST /notes/{course}/{lesson}` — create or replace the user's note;
-/// an empty body deletes it. Always redirects back to the lesson page.
+/// Gate for the note write routes: PB enabled, slugs valid, signed in,
+/// course + lesson exist, viewer may see the course. Auth failures redirect
+/// to /account (the drawer only renders signed in, so this is a stale
+/// session); everything else is a 404 page.
+async fn note_viewer(
+    state: &AppState,
+    headers: &HeaderMap,
+    course_slug: &str,
+    lesson_slug: &str,
+) -> Result<Viewer, Box<Response>> {
+    if state.pb_config.is_none() || !slug_ok(course_slug) || !slug_ok(lesson_slug) {
+        return Err(Box::new(crate::web::pages::not_found_page()));
+    }
+    let viewer = viewer_for(state, headers).await.map_err(|_| {
+        Box::new(
+            Redirect::to(&format!(
+                "/account?next=/course/{}/{}",
+                crate::web::pages::urlencode(course_slug),
+                crate::web::pages::urlencode(lesson_slug)
+            ))
+            .into_response(),
+        )
+    })?;
+    let store = state.store.read().await.clone();
+    let Some(course) = store.course(course_slug) else {
+        return Err(Box::new(crate::web::pages::not_found_page()));
+    };
+    if course.lesson(lesson_slug).is_none() {
+        return Err(Box::new(crate::web::pages::not_found_page()));
+    }
+    if !note_here_ok(state, &viewer, course_slug).await {
+        return Err(Box::new(crate::web::pages::not_found_page()));
+    }
+    Ok(viewer)
+}
+
+/// Trimmed body + validated anchor fields for one note. Callers borrow these
+/// into a `NoteDraft` (empty body allowed; callers decide what empty means).
+fn note_parts(form: &NoteForm, lesson: &Lesson) -> (String, String, String) {
+    let body = form.body.trim().to_string();
+    let (anchor, here_title) = sanitize_anchor(lesson, form.anchor.trim(), form.here_title.trim());
+    (body, anchor, here_title)
+}
+
+/// `POST /notes/{course}/{lesson}` — append a new note; an empty body is a
+/// no-op. Always redirects back to the lesson page.
 pub async fn save(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((course_slug, lesson_slug)): Path<(String, String)>,
     axum::Form(form): axum::Form<NoteForm>,
 ) -> Response {
-    let back = |flag: &str| {
-        Redirect::to(&format!(
-            "/course/{}/{}?notes={}",
-            crate::web::pages::urlencode(&course_slug),
-            crate::web::pages::urlencode(&lesson_slug),
-            flag
-        ))
-        .into_response()
-    };
-    if state.pb_config.is_none() {
-        return crate::web::pages::not_found_page();
-    }
-    if !slug_ok(&course_slug) || !slug_ok(&lesson_slug) {
-        return back("error");
-    }
-    let viewer = match viewer_for(&state, &headers).await {
+    let back = |flag: &str| back_to_lesson(&course_slug, &lesson_slug, flag);
+    let viewer = match note_viewer(&state, &headers, &course_slug, &lesson_slug).await {
         Ok(v) => v,
-        Err(_) => return Redirect::to(&format!(
-            "/account?next=/course/{}/{}",
-            crate::web::pages::urlencode(&course_slug),
-            crate::web::pages::urlencode(&lesson_slug)
-        ))
-        .into_response(),
+        Err(resp) => return *resp,
     };
     let store = state.store.read().await.clone();
-    let Some(course) = store.course(&course_slug) else {
+    let Some(lesson) = store
+        .course(&course_slug)
+        .and_then(|c| c.lesson(&lesson_slug))
+    else {
         return crate::web::pages::not_found_page();
     };
-    let Some(lesson) = course.lesson(&lesson_slug) else {
-        return crate::web::pages::not_found_page();
-    };
-    if !note_here_ok(&state, &viewer, &course_slug).await {
-        return crate::web::pages::not_found_page();
-    }
     let sess = viewer.session.as_ref().unwrap();
     let pb = state.pb.as_ref().unwrap();
-    let body = form.body.trim();
+    let (body, anchor, here_title) = note_parts(&form, lesson);
     if body.is_empty() {
-        let existing = pb
-            .get_notebook_entry(&sess.token, &sess.user_id, &course_slug, &lesson_slug)
-            .await;
-        match existing {
-            Ok(Some(entry)) => {
-                if let Err(e) = pb.delete_notebook_entry(&sess.token, &entry.id).await {
-                    tracing::warn!("note delete failed: {e}");
-                    return back("error");
-                }
-            }
-            Ok(None) => {}
-            Err(e) => {
-                tracing::warn!("note lookup before delete failed: {e}");
-                return back("error");
-            }
-        }
-        return back("removed");
+        return back("");
     }
-    let (anchor, here_title) = sanitize_anchor(lesson, form.anchor.trim(), form.here_title.trim());
     if body.len() > 65536 {
         return back("error");
     }
@@ -413,15 +541,114 @@ pub async fn save(
         lesson: &lesson_slug,
         anchor: &anchor,
         here_title: &here_title,
-        body,
+        body: &body,
     };
-    match pb.upsert_notebook_entry(&sess.token, &sess.user_id, &draft).await {
+    match pb
+        .create_notebook_entry(&sess.token, &sess.user_id, &draft)
+        .await
+    {
         Ok(()) => back("saved"),
         Err(e) => {
-            tracing::warn!("note save failed for {course_slug}/{lesson_slug}: {e}");
+            tracing::warn!("note create failed for {course_slug}/{lesson_slug}: {e}");
             back("error")
         }
     }
+}
+
+/// `POST /notes/{course}/{lesson}/{entry}` — replace one saved note; an
+/// empty body deletes it. Redirects back to the lesson page.
+pub async fn update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((course_slug, lesson_slug, entry_id)): Path<(String, String, String)>,
+    axum::Form(form): axum::Form<NoteForm>,
+) -> Response {
+    let back = |flag: &str| back_to_lesson(&course_slug, &lesson_slug, flag);
+    if !entry_id_ok(&entry_id) {
+        return back("error");
+    }
+    let viewer = match note_viewer(&state, &headers, &course_slug, &lesson_slug).await {
+        Ok(v) => v,
+        Err(_) => return back("error"),
+    };
+    let sess = viewer.session.as_ref().unwrap();
+    let pb = state.pb.as_ref().unwrap();
+    if form.body.trim().is_empty() {
+        return match pb.delete_notebook_entry(&sess.token, &entry_id).await {
+            Ok(()) => back("removed"),
+            Err(e) => {
+                tracing::warn!("note delete failed for {entry_id}: {e}");
+                back("error")
+            }
+        };
+    }
+    let store = state.store.read().await.clone();
+    let Some(lesson) = store
+        .course(&course_slug)
+        .and_then(|c| c.lesson(&lesson_slug))
+    else {
+        return back("error");
+    };
+    let (body, anchor, here_title) = note_parts(&form, lesson);
+    if body.len() > 65536 {
+        return back("error");
+    }
+    let draft = crate::pb::NoteDraft {
+        course: &course_slug,
+        lesson: &lesson_slug,
+        anchor: &anchor,
+        here_title: &here_title,
+        body: &body,
+    };
+    match pb
+        .update_notebook_entry(&sess.token, &entry_id, &draft)
+        .await
+    {
+        Ok(()) => back("saved"),
+        Err(e) => {
+            tracing::warn!("note update failed for {course_slug}/{lesson_slug}/{entry_id}: {e}");
+            back("error")
+        }
+    }
+}
+
+/// `POST /notes/{course}/{lesson}/{entry}/delete` — remove one saved note.
+pub async fn delete_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((course_slug, lesson_slug, entry_id)): Path<(String, String, String)>,
+) -> Response {
+    let back = |flag: &str| back_to_lesson(&course_slug, &lesson_slug, flag);
+    if !entry_id_ok(&entry_id) {
+        return back("error");
+    }
+    let viewer = match note_viewer(&state, &headers, &course_slug, &lesson_slug).await {
+        Ok(v) => v,
+        Err(_) => return back("error"),
+    };
+    let sess = viewer.session.as_ref().unwrap();
+    let pb = state.pb.as_ref().unwrap();
+    match pb.delete_notebook_entry(&sess.token, &entry_id).await {
+        Ok(()) => back("removed"),
+        Err(e) => {
+            tracing::warn!("note delete failed for {course_slug}/{lesson_slug}/{entry_id}: {e}");
+            back("error")
+        }
+    }
+}
+
+fn back_to_lesson(course_slug: &str, lesson_slug: &str, flag: &str) -> Response {
+    let base = format!(
+        "/course/{}/{}",
+        crate::web::pages::urlencode(course_slug),
+        crate::web::pages::urlencode(lesson_slug)
+    );
+    let url = if flag.is_empty() {
+        base
+    } else {
+        format!("{base}?notes={flag}")
+    };
+    Redirect::to(&url).into_response()
 }
 
 /// `POST /api/notes/preview` — render a draft note to an HTML fragment for
@@ -453,4 +680,43 @@ pub async fn preview(
         html,
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entries_sort_by_created_then_id() {
+        let mk = |id: &str, created: &str| crate::pb::NotebookEntry {
+            id: id.into(),
+            created: created.into(),
+            ..Default::default()
+        };
+        let entries = vec![
+            mk("b", "2026-11-05 05:00:00.000Z"),
+            mk("a", "2026-11-05 05:00:00.000Z"),
+            mk("c", "2026-11-04 05:00:00.000Z"),
+        ];
+        let ids: Vec<&str> = sorted_entries(&entries)
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect();
+        assert_eq!(ids, ["c", "a", "b"]);
+    }
+
+    #[test]
+    fn note_date_keeps_the_day() {
+        assert_eq!(note_date("2026-11-05 05:00:00.000Z"), "2026-11-05");
+        assert_eq!(note_date(""), "");
+    }
+
+    #[test]
+    fn entry_ids_must_be_plain_alphanumerics() {
+        assert!(entry_id_ok("abc123XYZ456de"));
+        assert!(!entry_id_ok(""));
+        assert!(!entry_id_ok("../../etc"));
+        assert!(!entry_id_ok("with space"));
+        assert!(!entry_id_ok(&"x".repeat(64)));
+    }
 }

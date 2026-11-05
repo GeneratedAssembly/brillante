@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
 pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
     let question = w.req_str("question")?;
@@ -47,5 +47,10 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
         <div class="quiz-explanation" hidden>{explanation}</div>
     };
 
-    Ok(widget_shell("quiz", &w.id, serialize_config(w.config.as_ref()), inner.into_any()))
+    Ok(widget_shell(
+        "quiz",
+        &w.id,
+        serialize_config(w.config.as_ref()),
+        inner.into_any(),
+    ))
 }

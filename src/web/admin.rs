@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
@@ -6,9 +7,9 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use leptos::prelude::*;
 
 use crate::render::render_document;
-use crate::web::access::{self, clean_role, parse_allow_roles, Visibility, ADMIN_ROLE};
-use crate::web::pages::{not_found_page, urlencode, Shell};
 use crate::web::AppState;
+use crate::web::access::{self, ADMIN_ROLE, Visibility, clean_role, parse_allow_roles};
+use crate::web::pages::{Shell, not_found_page, urlencode};
 
 const USERS_PER_PAGE: u32 = 50;
 const MAX_ROLES_PER_USER: usize = 16;
@@ -27,10 +28,7 @@ async fn require_admin(
 }
 
 /// `/admin` lands on the users tab for admins; others get the plain 404.
-pub async fn admin_root(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn admin_root(State(state): State<AppState>, headers: HeaderMap) -> Response {
     match require_admin(&state, &headers).await {
         Ok(_) => Redirect::to("/admin/users").into_response(),
         Err(resp) => *resp,
@@ -98,6 +96,7 @@ fn admin_tabs(active: &str) -> AnyView {
             {tab_link(active, "courses", "Courses", "/admin/courses")}
             {tab_link(active, "users", "Users", "/admin/users")}
             {tab_link(active, "tutor", "Tutor", "/admin/tutor")}
+            {tab_link(active, "grader", "Grader", "/admin/grader")}
         </nav>
     }
     .into_any()
@@ -324,7 +323,10 @@ pub async fn update_roles(
         "remove" => roles.retain(|r| r != &role),
         _ => return redirect_with(&back, Some("error=role")),
     }
-    match pb.update_user_roles(&sess.token, &form.user_id, &roles).await {
+    match pb
+        .update_user_roles(&sess.token, &form.user_id, &roles)
+        .await
+    {
         Ok(()) => redirect_with(&back, Some("saved=1")),
         Err(e) => {
             tracing::warn!("admin role update failed: {e}");
@@ -395,7 +397,10 @@ pub async fn delete_user(
         return redirect_with(&back, Some(flag));
     }
     if target.is_admin() {
-        match pb.list_users_page(&sess.token, Some("is_admin = true"), 1, 1).await {
+        match pb
+            .list_users_page(&sess.token, Some("is_admin = true"), 1, 1)
+            .await
+        {
             Ok((_, total)) if total > 1 => {}
             Ok((_, _)) => return redirect_with(&back, Some("error=last-admin")),
             Err(e) => {
@@ -415,6 +420,43 @@ pub async fn delete_user(
 
 // Courses: visibility, roles, individual grants
 // ---------------------------------------------------------------------------
+
+/// `POST /admin/reload` — rebuild the content store from disk. Admin-gated:
+/// scripted callers authenticate the same way as the browser, with the
+/// session cookie or an `Authorization: Bearer <pb-jwt>` header.
+pub async fn reload(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(resp) = require_admin(&state, &headers).await {
+        return *resp;
+    }
+    let fresh = {
+        let store = state.store.read().await;
+        store.reload()
+    };
+    let summary = format!(
+        "reloaded {} course(s), {} diagnostic(s)",
+        fresh.courses.len(),
+        fresh.diagnostics.len()
+    );
+    *state.store.write().await = Arc::new(fresh);
+    summary.into_response()
+}
+
+/// `GET /admin/diagnostics` — the content loader's warnings/errors.
+/// Admin-gated like every other /admin surface.
+pub async fn diagnostics(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(resp) = require_admin(&state, &headers).await {
+        return *resp;
+    }
+    let store = state.store.read().await;
+    if store.diagnostics.is_empty() {
+        return Html("no diagnostics\n".to_string()).into_response();
+    }
+    let mut out = String::new();
+    for d in &store.diagnostics {
+        out.push_str(&format!("{d}\n"));
+    }
+    Html(out).into_response()
+}
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct CoursesQuery {
@@ -467,7 +509,14 @@ pub async fn courses_page(
                 .map(|a| a.allow_roles.join(", "))
                 .unwrap_or_default();
             let course_grants = grants.get(&slug).cloned().unwrap_or_default();
-            course_panel(&slug, &title, &href, &allow_roles, visibility, &course_grants)
+            course_panel(
+                &slug,
+                &title,
+                &href,
+                &allow_roles,
+                visibility,
+                &course_grants,
+            )
         })
         .collect();
 
@@ -638,7 +687,12 @@ pub async fn update_grants(
     }
     let result = match form.action.as_str() {
         "grant" => {
-            let Some(email) = form.email.as_deref().map(str::trim).filter(|e| !e.is_empty()) else {
+            let Some(email) = form
+                .email
+                .as_deref()
+                .map(str::trim)
+                .filter(|e| !e.is_empty())
+            else {
                 return redirect_with("/admin/courses", Some("error=email"));
             };
             match pb.find_user_by_email(&sess.token, email).await {
@@ -800,16 +854,212 @@ pub async fn tutor_save(
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct GraderForm {
+    #[serde(default)]
+    enabled: Option<String>,
+    base_url: String,
+    chat_model: String,
+    #[serde(default)]
+    decisions_url: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    api_key: Option<String>,
+}
+
+pub async fn grader_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<UsersQuery>,
+) -> Response {
+    match require_admin(&state, &headers).await {
+        Ok(_) => {}
+        Err(resp) => return *resp,
+    }
+    let pb = state.pb.as_ref().expect("pb enabled for admins");
+    let settings = state.grader.settings(Some(pb)).await;
+    let key_hint = if settings.key_tail.is_empty() {
+        "not set".to_string()
+    } else {
+        format!("stored (ends …{})", settings.key_tail)
+    };
+    let content = vec![
+        admin_tabs("grader"),
+        feedback(params.error.as_ref(), params.saved.as_deref()),
+        view! {
+            <section class="admin-panel">
+                <h1>"Assignment grader"</h1>
+                <p class="admin-lede">
+                    "When enabled, signed-in learners can submit assignment answers for \
+                     LLM grading. The grader sees the problem statement and the hidden \
+                     reference solution from the course's config.toml; the learner only \
+                     sees the verdict, feedback, and reference after a real attempt. \
+                     Verdicts come from a Decisions model (e.g. typesafe/jev-1.13 via \
+                     OpenRouter's /api/alpha/decisions) when configured; the worked \
+                     feedback always comes from the chat model. Leave the Decisions \
+                     fields blank to grade everything with the chat model."
+                </p>
+                <form method="post" action="/admin/grader" class="tutor-config-form">
+                    <label class="admin-field admin-field-check">
+                        <input
+                            type="checkbox"
+                            name="enabled"
+                            value="on"
+                            checked=settings.enabled
+                        />
+                        "Enable the grader"
+                    </label>
+                    <label class="admin-field">
+                        <span>"Chat endpoint (base URL)"</span>
+                        <input
+                            type="text"
+                            name="base_url"
+                            value={settings.base_url}
+                            placeholder="https://openrouter.ai/api/v1"
+                            maxlength="300"
+                        />
+                    </label>
+                    <label class="admin-field">
+                        <span>"API key"</span>
+                        <input
+                            type="password"
+                            name="api_key"
+                            value=""
+                            autocomplete="off"
+                            placeholder={key_hint}
+                            maxlength="400"
+                        />
+                        <small class="admin-muted">
+                            "Leave blank to keep the stored key. Shared by both engines."
+                        </small>
+                    </label>
+                    <label class="admin-field">
+                        <span>"Chat model (worked feedback)"</span>
+                        <input
+                            type="text"
+                            name="chat_model"
+                            value={settings.chat_model}
+                            placeholder="qwen/qwen3.8-flash:floor"
+                            maxlength="120"
+                        />
+                        <small class="admin-muted">
+                            "OpenAI-compatible model that writes the LaTeX feedback; \
+                             also grades when no Decisions model is set."
+                        </small>
+                    </label>
+                    <label class="admin-field">
+                        <span>"Decisions endpoint (optional)"</span>
+                        <input
+                            type="text"
+                            name="decisions_url"
+                            value={settings.decisions_url}
+                            placeholder="https://openrouter.ai/api/alpha/decisions"
+                            maxlength="300"
+                        />
+                    </label>
+                    <label class="admin-field">
+                        <span>"Decisions model (verdict)"</span>
+                        <input
+                            type="text"
+                            name="model"
+                            value={settings.model}
+                            placeholder="typesafe/jev-1.13"
+                            maxlength="120"
+                        />
+                        <small class="admin-muted">
+                            "Typed-verdict model (correct / partially_correct / incorrect \
+                             + calibrated score). Both fields together enable it."
+                        </small>
+                    </label>
+                    <button type="submit" class="button button-primary">"Save"</button>
+                </form>
+            </section>
+        }
+        .into_any(),
+    ];
+    admin_response("Grader — Brillante".to_string(), content)
+}
+
+pub async fn grader_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Form(form): axum::Form<GraderForm>,
+) -> Response {
+    match require_admin(&state, &headers).await {
+        Ok(_) => {}
+        Err(resp) => return *resp,
+    }
+    let pb = state.pb.as_ref().expect("pb enabled for admins");
+    let base_url = form.base_url.trim().trim_end_matches('/');
+    let chat_model = form.chat_model.trim();
+    let decisions_url = form
+        .decisions_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+    let model = form
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+    let decisions_configured = !decisions_url.is_empty() || !model.is_empty();
+    let valid = valid_endpoint(base_url)
+        && !chat_model.is_empty()
+        && chat_model.len() <= 120
+        && (!decisions_configured
+            || (valid_endpoint(decisions_url) && !model.is_empty() && model.len() <= 120));
+    if !valid {
+        return redirect_with("/admin/grader", Some("error=config"));
+    }
+    let enabled = form.enabled.as_deref() == Some("on");
+    // PB 0.40 refuses hidden-field (api_key) writes from admin tokens, so
+    // the server persists with its superuser credentials; the admin gate
+    // above is what authorizes the change.
+    let su = match crate::web::tutor::superuser_token(pb).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!("grader save needs superuser credentials: {e}");
+            return redirect_with("/admin/grader", Some("error=credentials"));
+        }
+    };
+    match pb
+        .save_grader_settings(
+            &su,
+            enabled,
+            base_url,
+            chat_model,
+            decisions_url,
+            model,
+            form.api_key.as_deref(),
+        )
+        .await
+    {
+        Ok(()) => {
+            state.grader.invalidate().await;
+            redirect_with("/admin/grader", Some("saved=1"))
+        }
+        Err(e) => {
+            tracing::warn!("grader settings save failed: {e}");
+            redirect_with("/admin/grader", Some("error=save"))
+        }
+    }
+}
+
 fn error_panel(title: &str, message: &str) -> Response {
     let title = format!("{title} — Brillante");
-    let content = vec![view! {
-        <section class="admin-panel">
-            <h1>{title.clone()}</h1>
-            <p class="auth-error">{message.to_string()}</p>
-            <p><a href="/admin/courses">"Back to course access"</a></p>
-        </section>
-    }
-    .into_any()];
+    let content = vec![
+        view! {
+            <section class="admin-panel">
+                <h1>{title.clone()}</h1>
+                <p class="auth-error">{message.to_string()}</p>
+                <p><a href="/admin/courses">"Back to course access"</a></p>
+            </section>
+        }
+        .into_any(),
+    ];
     admin_response(title, content)
 }
 
@@ -838,7 +1088,9 @@ mod tests {
         let html = |view: AnyView| crate::render::render_html(move || view);
         assert!(html(feedback(None, Some("deleted"))).contains("Account deleted."));
         assert!(html(feedback(Some(&"confirm".to_string()), None)).contains("confirm box"));
-        assert!(html(feedback(Some(&"last-admin".to_string()), None)).contains("last remaining admin"));
+        assert!(
+            html(feedback(Some(&"last-admin".to_string()), None)).contains("last remaining admin")
+        );
         assert!(html(feedback(Some(&"self-delete".to_string()), None)).contains("own account"));
         assert!(html(feedback(None, None)).contains("hidden"));
     }

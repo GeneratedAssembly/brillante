@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
 struct Step {
     title: Option<String>,
@@ -96,7 +96,12 @@ pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
         </div>
     };
 
-    Ok(widget_shell("stepper", &w.id, serialize_config(w.config.as_ref()), inner.into_any()))
+    Ok(widget_shell(
+        "stepper",
+        &w.id,
+        serialize_config(w.config.as_ref()),
+        inner.into_any(),
+    ))
 }
 
 #[cfg(test)]

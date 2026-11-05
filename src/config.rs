@@ -79,7 +79,9 @@ impl AppConfig {
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| PathBuf::from("."));
             let server = cfg.server.unwrap_or_default();
-            let host = host_override.clone().unwrap_or_else(|| server.host.unwrap_or_else(|| "127.0.0.1".into()));
+            let host = host_override
+                .clone()
+                .unwrap_or_else(|| server.host.unwrap_or_else(|| "127.0.0.1".into()));
             let port = port_override.unwrap_or_else(|| server.port.unwrap_or(3000));
             let derived_url = derive_public_url(&host, port);
             let public_url = match server.public_url.as_deref().map(str::trim) {
@@ -163,7 +165,10 @@ impl AppConfig {
     fn register(&mut self, extra: Vec<PathBuf>, warnings: &mut Vec<String>) {
         for path in extra {
             if !path.is_dir() {
-                warnings.push(format!("registered course directory not found: {}", path.display()));
+                warnings.push(format!(
+                    "registered course directory not found: {}",
+                    path.display()
+                ));
                 continue;
             }
             self.courses.push(path);
@@ -221,8 +226,7 @@ fn derive_public_url(host: &str, port: u16) -> String {
 
 fn normalize_public_url(raw: &str) -> Option<String> {
     let trimmed = raw.trim().trim_end_matches('/');
-    (trimmed.starts_with("http://") || trimmed.starts_with("https://"))
-        .then(|| trimmed.to_string())
+    (trimmed.starts_with("http://") || trimmed.starts_with("https://")).then(|| trimmed.to_string())
 }
 
 fn discover_under(root: &Path, app: &mut AppConfig) {
@@ -286,7 +290,10 @@ mod tests {
         )
         .unwrap();
         let app = AppConfig::load(Some(&path), &[], None, None).unwrap();
-        assert_eq!(app.courses, vec![dir.path().join("content/a"), PathBuf::from("/abs/b")]);
+        assert_eq!(
+            app.courses,
+            vec![dir.path().join("content/a"), PathBuf::from("/abs/b")]
+        );
         assert!(app.warnings.is_empty());
     }
 
@@ -301,19 +308,26 @@ mod tests {
         .unwrap();
         let app = AppConfig::load(Some(&path), &[], None, None).unwrap();
         assert_eq!(app.courses, vec![dir.path().join("content/a")]);
-        assert!(app
-            .warnings
-            .iter()
-            .any(|w| w.contains("'courses' sits after [server]")));
+        assert!(
+            app.warnings
+                .iter()
+                .any(|w| w.contains("'courses' sits after [server]"))
+        );
     }
 
     #[test]
     fn derives_public_url_from_bind_address() {
-        assert_eq!(derive_public_url("127.0.0.1", 3000), "http://127.0.0.1:3000");
+        assert_eq!(
+            derive_public_url("127.0.0.1", 3000),
+            "http://127.0.0.1:3000"
+        );
         assert_eq!(derive_public_url("0.0.0.0", 8080), "http://127.0.0.1:8080");
         assert_eq!(derive_public_url("::", 3000), "http://127.0.0.1:3000");
         assert_eq!(derive_public_url("::1", 3000), "http://[::1]:3000");
-        assert_eq!(derive_public_url("example.com", 3000), "http://example.com:3000");
+        assert_eq!(
+            derive_public_url("example.com", 3000),
+            "http://example.com:3000"
+        );
     }
 
     #[test]
@@ -343,7 +357,11 @@ mod tests {
         let app = AppConfig::load(Some(&path), &[], None, None).unwrap();
         let pb = app.pocketbase.expect("pocketbase config");
         assert_eq!(pb.public_url, "http://127.0.0.1:3000");
-        assert!(app.warnings.iter().any(|w| w.contains("[server] public_url")));
+        assert!(
+            app.warnings
+                .iter()
+                .any(|w| w.contains("[server] public_url"))
+        );
     }
 
     #[test]
@@ -366,7 +384,11 @@ mod tests {
     fn invalid_pocketbase_url_disables_auth_with_warning() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("brillante.toml");
-        fs::write(&path, "courses = [\"content/a\"]\n[pocketbase]\nurl = \"ftp://nope\"\n").unwrap();
+        fs::write(
+            &path,
+            "courses = [\"content/a\"]\n[pocketbase]\nurl = \"ftp://nope\"\n",
+        )
+        .unwrap();
         let app = AppConfig::load(Some(&path), &[], None, None).unwrap();
         assert!(app.pocketbase.is_none());
         assert!(
@@ -380,15 +402,20 @@ mod tests {
     fn discovers_when_no_courses_listed() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("content/my-course")).unwrap();
-        fs::write(dir.path().join("content/my-course/l.md"), "---\ntitle: L\n---\n").unwrap();
+        fs::write(
+            dir.path().join("content/my-course/l.md"),
+            "---\ntitle: L\n---\n",
+        )
+        .unwrap();
         fs::create_dir_all(dir.path().join("content/not-a-course")).unwrap();
         let path = dir.path().join("brillante.toml");
         fs::write(&path, "[server]\nhost = \"127.0.0.1\"\nport = 3000\n").unwrap();
         let app = AppConfig::load(Some(&path), &[], None, None).unwrap();
         assert_eq!(app.courses, vec![dir.path().join("content/my-course")]);
-        assert!(app
-            .warnings
-            .iter()
-            .any(|w| w.contains("auto-discovery skipped")));
+        assert!(
+            app.warnings
+                .iter()
+                .any(|w| w.contains("auto-discovery skipped"))
+        );
     }
 }

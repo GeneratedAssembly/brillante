@@ -1,8 +1,8 @@
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use base64::Engine as _;
-use cookie::{Cookie, CookieBuilder, SameSite};
 use cookie::time::Duration;
+use cookie::{Cookie, CookieBuilder, SameSite};
 
 use crate::pb::{AuthUser, PbError, PocketBase};
 
@@ -28,7 +28,9 @@ impl Session {
 /// is verified by PB on every API call. Claims are decoded, not trusted.
 pub fn decode_claims(token: &str) -> Option<(String, i64)> {
     let payload = token.split('.').nth(1)?;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
     let claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     let user_id = claims
         .get("id")
@@ -92,19 +94,17 @@ pub async fn resolve(
         return (Some(session), None);
     }
     match pb.auth_refresh(&raw).await {
-        Ok((fresh_token, _)) => {
-            match decode_claims(&fresh_token) {
-                Some((uid, exp)) => {
-                    session = Session {
-                        token: fresh_token.clone(),
-                        user_id: uid,
-                        exp,
-                    };
-                    (Some(session), Some(session_cookie(&fresh_token, secure)))
-                }
-                None => (None, Some(cleared_cookie())),
+        Ok((fresh_token, _)) => match decode_claims(&fresh_token) {
+            Some((uid, exp)) => {
+                session = Session {
+                    token: fresh_token.clone(),
+                    user_id: uid,
+                    exp,
+                };
+                (Some(session), Some(session_cookie(&fresh_token, secure)))
             }
-        }
+            None => (None, Some(cleared_cookie())),
+        },
         Err(PbError::Unauthorized) => (None, Some(cleared_cookie())),
         Err(_) => (Some(session), None),
     }
@@ -112,6 +112,28 @@ pub async fn resolve(
 
 pub fn cookie_from_headers(headers: &axum::http::HeaderMap) -> Option<String> {
     named_cookie(headers, SESSION_COOKIE)
+}
+
+/// The `Authorization: Bearer <token>` JWT, for server-side callers (scripts,
+/// curl) that hold the same PB token the browser carries in the cookie.
+pub fn bearer_from_headers(headers: &axum::http::HeaderMap) -> Option<String> {
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    let token = token.trim();
+    if !scheme.eq_ignore_ascii_case("bearer") || token.is_empty() {
+        return None;
+    }
+    Some(token.to_string())
+}
+
+/// The request's PB JWT: the session cookie when present, else the Bearer
+/// token. Both end up verified by PocketBase on the proxied call, so neither
+/// path can impersonate a user or skip an auth check.
+pub fn token_from_headers(headers: &axum::http::HeaderMap) -> Option<String> {
+    cookie_from_headers(headers).or_else(|| bearer_from_headers(headers))
 }
 
 /// First value of the named cookie from the `Cookie` header, if present and
@@ -198,7 +220,7 @@ impl FromRequestParts<crate::web::AppState> for Authed {
         let Some(pb) = &state.pb else {
             return Err(AuthError::Unauthorized);
         };
-        let Some(raw) = cookie_from_headers(&parts.headers) else {
+        let Some(raw) = token_from_headers(&parts.headers) else {
             return Err(AuthError::Unauthorized);
         };
         let Some((user_id, exp)) = decode_claims(&raw) else {
@@ -280,5 +302,45 @@ mod tests {
         assert_eq!(cookie_from_headers(&headers).as_deref(), Some("abc"));
         let headers = axum::http::HeaderMap::new();
         assert_eq!(cookie_from_headers(&headers), None);
+    }
+
+    #[test]
+    fn bearer_token_is_the_server_side_fallback() {
+        let headers = axum::http::HeaderMap::new();
+        assert_eq!(token_from_headers(&headers), None);
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer abc.def.ghi".parse().unwrap(),
+        );
+        assert_eq!(token_from_headers(&headers).as_deref(), Some("abc.def.ghi"));
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "bearer tok".parse().unwrap(),
+        );
+        assert_eq!(token_from_headers(&headers).as_deref(), Some("tok"));
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(axum::http::header::AUTHORIZATION, "Basic x".parse().unwrap());
+        assert_eq!(token_from_headers(&headers), None);
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(axum::http::header::AUTHORIZATION, "Bearer".parse().unwrap());
+        assert_eq!(token_from_headers(&headers), None);
+
+        // The cookie wins when a request carries both.
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            "brillante.session=cookie-tok".parse().unwrap(),
+        );
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer bearer-tok".parse().unwrap(),
+        );
+        assert_eq!(token_from_headers(&headers).as_deref(), Some("cookie-tok"));
     }
 }

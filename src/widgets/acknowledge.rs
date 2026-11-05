@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::widgets::{serialize_config, widget_shell, WidgetError, WidgetInstance};
+use crate::widgets::{WidgetError, WidgetInstance, serialize_config, widget_shell};
 
 pub fn render(w: &WidgetInstance) -> Result<AnyView, WidgetError> {
     let statement = w.req_str("statement")?;
